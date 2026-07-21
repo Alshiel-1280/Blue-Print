@@ -3,6 +3,7 @@ import SwiftUI
 enum AppDestination: String, CaseIterable, Identifiable {
   case inbox
   case transactionInput
+  case billing
   case journal
   case ledger
   case trialBalance
@@ -17,6 +18,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     switch self {
     case .inbox: "受信箱"
     case .transactionInput: "取引入力"
+    case .billing: "請求・支払"
     case .journal: "仕訳帳"
     case .ledger: "総勘定元帳"
     case .trialBalance: "試算表"
@@ -31,6 +33,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     switch self {
     case .inbox: "tray.full"
     case .transactionInput: "square.and.pencil"
+    case .billing: "doc.text"
     case .journal: "book.closed"
     case .ledger: "books.vertical"
     case .trialBalance: "tablecells"
@@ -83,6 +86,9 @@ struct MainShellView: View {
               Label(
                 AppDestination.transactionInput.title,
                 systemImage: AppDestination.transactionInput.icon)
+            }
+            NavigationLink(value: AppDestination.billing) {
+              Label(AppDestination.billing.title, systemImage: AppDestination.billing.icon)
             }
             NavigationLink(value: AppDestination.journal) {
               Label(AppDestination.journal.title, systemImage: AppDestination.journal.icon)
@@ -138,6 +144,8 @@ struct MainShellView: View {
         EvidenceInboxView(model: model)
       case .transactionInput:
         JournalEntryView(model: model)
+      case .billing:
+        BillingWorkbenchView(model: model)
       case .journal:
         JournalListView(model: model)
       case .ledger:

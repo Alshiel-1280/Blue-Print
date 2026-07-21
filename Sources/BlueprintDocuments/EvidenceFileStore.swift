@@ -47,6 +47,38 @@ public struct EvidenceFileStore: Sendable {
     )
   }
 
+  public func importOriginal(
+    data: Data,
+    documentID: UUID,
+    fileExtension: String,
+    mimeType: String
+  ) throws -> StoredEvidenceOriginal {
+    guard !data.isEmpty else { throw EvidenceError.unreadableFile }
+    let normalizedExtension = fileExtension.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+    let relative =
+      "\(documentID.uuidString.lowercased()).\(normalizedExtension.isEmpty ? "bin" : normalizedExtension.lowercased())"
+    let destination = originalsDirectory.appendingPathComponent(relative)
+    try FileManager.default.createDirectory(
+      at: originalsDirectory,
+      withIntermediateDirectories: true
+    )
+    guard !FileManager.default.fileExists(atPath: destination.path) else {
+      throw EvidenceError.originalMutationForbidden
+    }
+    do {
+      try data.write(to: destination, options: .withoutOverwriting)
+    } catch {
+      throw EvidenceError.originalMutationForbidden
+    }
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    return StoredEvidenceOriginal(
+      sha256: digest,
+      relativePath: relative,
+      byteCount: Int64(data.count),
+      mimeType: mimeType
+    )
+  }
+
   public func fingerprint(_ source: URL) throws -> (sha256: String, byteCount: Int64) {
     let data: Data
     do {
@@ -54,6 +86,12 @@ public struct EvidenceFileStore: Sendable {
     } catch {
       throw EvidenceError.unreadableFile
     }
+    guard !data.isEmpty else { throw EvidenceError.unreadableFile }
+    let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    return (digest, Int64(data.count))
+  }
+
+  public func fingerprint(_ data: Data) throws -> (sha256: String, byteCount: Int64) {
     guard !data.isEmpty else { throw EvidenceError.unreadableFile }
     let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     return (digest, Int64(data.count))

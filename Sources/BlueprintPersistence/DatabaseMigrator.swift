@@ -74,6 +74,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion3(connection)
     case 4:
       try applyVersion4(connection)
+    case 5:
+      try applyVersion5(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -426,6 +428,85 @@ public struct DatabaseMigrator: Sendable {
       """)
     try connection.execute(
       "CREATE INDEX imported_transactions_match_index ON imported_transactions(transaction_date, amount_yen, description, external_id)"
+    )
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+      ]
+    )
+  }
+
+  private func applyVersion5(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE counterparties (
+          id TEXT PRIMARY KEY NOT NULL,
+          code TEXT NOT NULL UNIQUE,
+          display_name TEXT NOT NULL,
+          roles_json TEXT NOT NULL,
+          is_active INTEGER NOT NULL CHECK (is_active IN (0,1)),
+          payload_json TEXT NOT NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE invoices (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          counterparty_id TEXT NOT NULL REFERENCES counterparties(id),
+          number TEXT NOT NULL UNIQUE,
+          issue_date REAL NOT NULL,
+          due_date REAL NOT NULL,
+          status TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          source_invoice_id TEXT REFERENCES invoices(id),
+          journal_entry_id TEXT REFERENCES journal_entries(id),
+          evidence_id TEXT REFERENCES evidence_documents(id),
+          payload_json TEXT NOT NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      "CREATE INDEX invoices_due_status_index ON invoices(fiscal_year_id, status, due_date)"
+    )
+    try connection.execute(
+      """
+      CREATE TABLE invoice_reissues (
+          id TEXT PRIMARY KEY NOT NULL,
+          invoice_id TEXT NOT NULL REFERENCES invoices(id),
+          sequence INTEGER NOT NULL CHECK (sequence > 0),
+          issued_at REAL NOT NULL,
+          reason TEXT NOT NULL,
+          evidence_id TEXT NOT NULL REFERENCES evidence_documents(id),
+          payload_json TEXT NOT NULL,
+          UNIQUE(invoice_id, sequence)
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE vendor_bills (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          vendor_id TEXT NOT NULL REFERENCES counterparties(id),
+          reference_number TEXT NOT NULL,
+          issue_date REAL NOT NULL,
+          due_date REAL NOT NULL,
+          status TEXT NOT NULL,
+          journal_entry_id TEXT REFERENCES journal_entries(id),
+          evidence_id TEXT REFERENCES evidence_documents(id),
+          payload_json TEXT NOT NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL,
+          UNIQUE(vendor_id, reference_number)
+      ) STRICT
+      """)
+    try connection.execute(
+      "CREATE INDEX vendor_bills_due_status_index ON vendor_bills(fiscal_year_id, status, due_date)"
     )
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",

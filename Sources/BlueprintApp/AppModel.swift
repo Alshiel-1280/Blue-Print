@@ -1,4 +1,5 @@
 import BlueprintAudit
+import BlueprintBilling
 import BlueprintDocuments
 import BlueprintDomain
 import BlueprintImports
@@ -17,6 +18,9 @@ final class AppModel: ObservableObject {
   @Published private(set) var importBatches: [ImportBatch] = []
   @Published private(set) var importedTransactions: [ImportedTransaction] = []
   @Published private(set) var importProfiles: [ImportProfile] = []
+  @Published private(set) var counterparties: [Counterparty] = []
+  @Published private(set) var invoices: [Invoice] = []
+  @Published private(set) var vendorBills: [VendorBill] = []
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -384,6 +388,231 @@ final class AppModel: ObservableObject {
     )
   }
 
+  func createInvoice(
+    customerName: String,
+    number: String,
+    issueDate: Date,
+    dueDate: Date,
+    subject: String,
+    lineDescription: String,
+    netAmount: Int64,
+    taxRate: TaxRate
+  ) {
+    guard let database, let fiscalYear, let profile else { return }
+    do {
+      let now = clock.now()
+      let normalizedName = customerName.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !normalizedName.isEmpty, netAmount > 0 else { throw BillingError.invalidAmount }
+      let counterparty =
+        counterparties.first {
+          $0.roles.contains(.customer) && $0.displayName == normalizedName
+        }
+        ?? Counterparty(
+          metadata: EntityMetadata(createdAt: now),
+          code: "C-\(String(format: "%04d", counterparties.count + 1))",
+          displayName: normalizedName,
+          roles: [.customer]
+        )
+      if !counterparties.contains(where: { $0.id == counterparty.id }) {
+        try database.saveCounterparty(counterparty, at: now)
+      }
+      let proposedNumber = number.trimmingCharacters(in: .whitespacesAndNewlines)
+      let resolvedNumber =
+        proposedNumber.isEmpty
+        ? InvoiceNumbering.next(
+          calendarYear: fiscalYear.calendarYear,
+          existingNumbers: invoices.map(\.number)
+        )
+        : proposedNumber
+      let invoice = try Invoice(
+        metadata: EntityMetadata(createdAt: now),
+        fiscalYearID: fiscalYear.id,
+        counterpartyID: counterparty.id,
+        number: resolvedNumber,
+        issueDate: issueDate,
+        dueDate: dueDate,
+        subject: subject,
+        lines: [
+          try InvoiceLine(
+            description: lineDescription,
+            quantity: 1,
+            unitPrice: Money(yen: netAmount),
+            taxRate: taxRate
+          )
+        ],
+        roundingRule: profile.roundingRule,
+        issuerName: profile.tradeName,
+        issuerAddress: profile.postalAddress,
+        issuerRegistrationStatus: profile.invoiceRegistrationStatus,
+        issuerRegistrationNumber: profile.invoiceRegistrationNumber
+      )
+      _ = try database.issueInvoice(
+        invoice,
+        accounts: InvoiceIssueAccounts(
+          receivableAccountID: try accountID(code: "1200"),
+          revenueAccountID: try accountID(code: "4000")
+        ),
+        at: now
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func recordInvoicePayment(
+    _ invoice: Invoice,
+    appliedAmount: Int64,
+    bankFee: Int64,
+    withholdingTax: Int64,
+    discount: Int64
+  ) {
+    guard let database else { return }
+    do {
+      let deductions = bankFee + withholdingTax + discount
+      let settlement = try InvoiceSettlement(
+        receivedAt: clock.now(),
+        appliedAmount: Money(yen: appliedAmount),
+        cashReceived: Money(yen: appliedAmount - deductions),
+        bankFee: Money(yen: bankFee),
+        withholdingTax: Money(yen: withholdingTax),
+        discount: Money(yen: discount)
+      )
+      _ = try database.settleInvoice(
+        invoiceID: invoice.id,
+        settlement: settlement,
+        accounts: ReceivableSettlementAccounts(
+          receivableAccountID: try accountID(code: "1200"),
+          bankAccountID: try accountID(code: "1100"),
+          bankFeeAccountID: try accountID(code: "5500"),
+          withholdingAccountID: try accountID(code: "2000"),
+          discountAccountID: try accountID(code: "3100"),
+          overpaymentAccountID: try accountID(code: "3200")
+        ),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func cancelInvoice(_ invoice: Invoice, reason: String) {
+    guard let database else { return }
+    do {
+      _ = try database.cancelInvoice(id: invoice.id, reason: reason, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func reissueInvoice(_ invoice: Invoice, reason: String) {
+    guard let database else { return }
+    do {
+      _ = try database.reissueInvoice(id: invoice.id, reason: reason, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func createVendorBill(
+    vendorName: String,
+    referenceNumber: String,
+    issueDate: Date,
+    dueDate: Date,
+    description: String,
+    netAmount: Int64,
+    withholdingEnabled: Bool,
+    withholdingTax: Int64
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let now = clock.now()
+      let normalizedName = vendorName.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !normalizedName.isEmpty, netAmount > 0 else { throw BillingError.invalidAmount }
+      let vendor =
+        counterparties.first {
+          $0.roles.contains(.vendor) && $0.displayName == normalizedName
+        }
+        ?? Counterparty(
+          metadata: EntityMetadata(createdAt: now),
+          code: "V-\(String(format: "%04d", counterparties.count + 1))",
+          displayName: normalizedName,
+          roles: [.vendor],
+          withholdingDefaultEnabled: false
+        )
+      if !counterparties.contains(where: { $0.id == vendor.id }) {
+        try database.saveCounterparty(vendor, at: now)
+      }
+      let bill = try VendorBill(
+        metadata: EntityMetadata(createdAt: now),
+        fiscalYearID: fiscalYear.id,
+        vendorID: vendor.id,
+        referenceNumber: referenceNumber,
+        issueDate: issueDate,
+        dueDate: dueDate,
+        description: description,
+        lines: [
+          try InvoiceLine(
+            description: description,
+            quantity: 1,
+            unitPrice: Money(yen: netAmount),
+            taxRate: .standard10
+          )
+        ],
+        invoiceStatus: vendor.invoiceRegistrationStatus,
+        withholdingEnabled: withholdingEnabled,
+        withholdingTax: Money(yen: withholdingTax)
+      )
+      _ = try database.confirmVendorBill(
+        bill,
+        accounts: VendorBillAccounts(
+          expenseAccountID: try accountID(code: "5100"),
+          payableAccountID: try accountID(code: "2100")
+        ),
+        at: now
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func recordVendorPayment(_ bill: VendorBill, appliedAmount: Int64) {
+    guard let database else { return }
+    do {
+      let withholding = min(bill.withholdingTax.yen, appliedAmount)
+      let payment = try VendorBillPayment(
+        paidAt: clock.now(),
+        appliedAmount: Money(yen: appliedAmount),
+        cashPaid: Money(yen: appliedAmount - withholding),
+        withholdingTax: Money(yen: withholding)
+      )
+      _ = try database.settleVendorBill(
+        billID: bill.id,
+        payment: payment,
+        accounts: VendorPaymentAccounts(
+          payableAccountID: try accountID(code: "2100"),
+          bankAccountID: try accountID(code: "1100"),
+          bankFeeAccountID: try accountID(code: "5500"),
+          withholdingAccountID: try accountID(code: "2000")
+        ),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
   var trialBalance: TrialBalance? {
     try? AccountingReports.trialBalance(entries: journalEntries)
   }
@@ -408,6 +637,13 @@ final class AppModel: ObservableObject {
     importProfiles = try database.imports.profiles()
     importedTransactions = try database.imports.transactions(
       states: Set(ImportedTransactionState.allCases)
+    )
+    counterparties = try database.billing.counterparties(includeInactive: false)
+    invoices = try database.billing.invoices(
+      BillingSearch(fiscalYearID: fiscalYear?.id)
+    )
+    vendorBills = try database.billing.vendorBills(
+      BillingSearch(fiscalYearID: fiscalYear?.id)
     )
   }
 
@@ -437,6 +673,16 @@ final class AppModel: ObservableObject {
       "証憑原本は上書きできません。修正値は候補欄へ記録してください。"
     case EvidenceError.confirmationRequired:
       "確認済みの項目だけ転記できます。状態と入力内容を確認してください。"
+    case BillingError.duplicateNumber:
+      "同じ請求番号が既にあります。請求番号を変更してください。"
+    case BillingError.missingQualifiedInvoiceField(let field):
+      "適格請求書の必須項目「\(field)」が未入力です。事業者設定または請求内容を確認してください。"
+    case BillingError.invalidStateTransition:
+      "現在の状態ではこの操作を実行できません。入金・取消状況を確認してください。"
+    case BillingError.settlementExceedsOutstanding:
+      "消込額が未収・未払残高を超えています。金額を修正してください。"
+    case BillingError.settlementComponentsDoNotBalance:
+      "入出金額と手数料・源泉税・値引の合計が一致していません。"
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }
@@ -465,5 +711,12 @@ final class AppModel: ObservableObject {
     case "tif", "tiff": "image/tiff"
     default: "application/octet-stream"
     }
+  }
+
+  private func accountID(code: String) throws -> EntityID {
+    guard let account = accounts.first(where: { $0.code == code }) else {
+      throw RepositoryError.notFound
+    }
+    return account.id
   }
 }

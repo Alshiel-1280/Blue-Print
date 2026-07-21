@@ -90,4 +90,6 @@ public enum InvoiceStatus: String, Codable, CaseIterable, Sendable {
   case paid
   case cancelled
   case overdue
+  case corrected
+  case refunded
 }

@@ -8,3 +8,4 @@ DerivedData/
 *.sqlite-wal
 *.backup
 .DS_Store
+tmp/
