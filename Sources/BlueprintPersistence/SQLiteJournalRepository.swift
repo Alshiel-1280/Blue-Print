@@ -143,8 +143,9 @@ public final class SQLiteJournalRepository: JournalRepository, @unchecked Sendab
         """
         INSERT INTO journal_lines (
             id, entry_id, account_id, sub_account_id, side, amount_yen,
-            tax_rate, counterparty, memo, line_order
-        ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            tax_rate, invoice_status, deductible_basis_points, rounding_unit,
+            counterparty, memo, line_order
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         bindings: [
           .text(line.id.uuidString.lowercased()),
@@ -154,6 +155,9 @@ public final class SQLiteJournalRepository: JournalRepository, @unchecked Sendab
           .text(line.side.rawValue),
           .integer(line.amount.yen),
           .text(line.taxRate.rawValue),
+          .text(line.invoiceStatus.rawValue),
+          .integer(Int64(line.deductibleBasisPoints)),
+          .text(line.roundingUnit.rawValue),
           .text(line.counterparty),
           .text(line.memo),
           .integer(Int64(index)),
@@ -176,6 +180,9 @@ public final class SQLiteJournalRepository: JournalRepository, @unchecked Sendab
         side: enumValue(line, "side"),
         amount: Money(yen: integer(line, "amount_yen")),
         taxRate: enumValue(line, "tax_rate"),
+        invoiceStatus: enumValue(line, "invoice_status"),
+        deductibleBasisPoints: Int(try integer(line, "deductible_basis_points")),
+        roundingUnit: enumValue(line, "rounding_unit"),
         counterparty: text(line, "counterparty"),
         memo: text(line, "memo")
       )

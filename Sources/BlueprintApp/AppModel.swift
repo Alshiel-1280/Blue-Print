@@ -1,5 +1,7 @@
 import BlueprintAudit
+import BlueprintDocuments
 import BlueprintDomain
+import BlueprintImports
 import BlueprintPersistence
 import Combine
 import Foundation
@@ -11,6 +13,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var accounts: [Account] = []
   @Published private(set) var journalEntries: [JournalEntry] = []
   @Published private(set) var auditEvents: [AuditEvent] = []
+  @Published private(set) var evidenceDocuments: [EvidenceDocument] = []
+  @Published private(set) var importBatches: [ImportBatch] = []
+  @Published private(set) var importedTransactions: [ImportedTransaction] = []
+  @Published private(set) var importProfiles: [ImportProfile] = []
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -205,6 +211,179 @@ final class AppModel: ObservableObject {
     (try? AccountingReports.ledger(accountID: accountID, entries: journalEntries)) ?? []
   }
 
+  func evidenceCandidates(evidenceID: EntityID) -> [OCRCandidate] {
+    guard let database else { return [] }
+    return (try? database.evidence.candidates(evidenceID: evidenceID)) ?? []
+  }
+
+  func originalURL(for document: EvidenceDocument) -> URL? {
+    database?.evidenceFileStore.originalURL(relativePath: document.originalRelativePath)
+  }
+
+  func importEvidence(from url: URL, origin: EvidenceOrigin) {
+    guard let database else { return }
+    let didAccess = url.startAccessingSecurityScopedResource()
+    defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let mimeType = Self.mimeType(for: url)
+      let document = try database.importEvidence(
+        from: url,
+        mimeType: mimeType,
+        origin: origin,
+        at: clock.now()
+      )
+      _ = try database.processOCR(evidenceID: document.id, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func correctOCRCandidate(_ candidate: OCRCandidate, value: String) {
+    guard let database else { return }
+    do {
+      try database.correctOCRCandidate(
+        id: candidate.id,
+        evidenceID: candidate.evidenceID,
+        value: value,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func confirmEvidence(
+    _ document: EvidenceDocument,
+    transactionDate: Date,
+    amount: Money,
+    counterparty: String,
+    description: String,
+    expenseAccountID: EntityID,
+    paymentAccountID: EntityID,
+    taxSelection: TaxSelection,
+    roundingUnit: RoundingUnit
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.confirmEvidenceAndPost(
+        evidenceID: document.id,
+        fiscalYearID: fiscalYear.id,
+        expenseAccountID: expenseAccountID,
+        paymentAccountID: paymentAccountID,
+        transactionDate: transactionDate,
+        amount: amount,
+        counterparty: counterparty,
+        description: description,
+        taxSelection: taxSelection,
+        roundingUnit: roundingUnit,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func excludeEvidence(_ document: EvidenceDocument) {
+    guard let database else { return }
+    do {
+      var document = document
+      document.state = .excluded
+      document.metadata.touch(at: clock.now())
+      try database.evidence.save(document)
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func importCSV(data: Data, filename: String, profile: ImportProfile) {
+    guard let database else { return }
+    do {
+      _ = try database.importCSV(
+        data: data,
+        filename: filename,
+        profile: profile,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func cancelImportBatch(_ batch: ImportBatch) {
+    guard let database else { return }
+    do {
+      try database.imports.cancelBatch(id: batch.id)
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func transactionEvidenceCandidates(transactionID: EntityID) -> [TransactionEvidenceCandidate] {
+    guard let database else { return [] }
+    return (try? database.evidenceCandidates(for: transactionID)) ?? []
+  }
+
+  func associateEvidence(transactionID: EntityID, evidenceID: EntityID) {
+    guard let database else { return }
+    do {
+      try database.associateEvidence(
+        transactionID: transactionID,
+        evidenceID: evidenceID,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func confirmImportedTransaction(
+    _ transaction: ImportedTransaction,
+    expenseAccountID: EntityID,
+    paymentAccountID: EntityID,
+    taxSelection: TaxSelection,
+    roundingUnit: RoundingUnit
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.confirmImportedTransaction(
+        transactionID: transaction.id,
+        fiscalYearID: fiscalYear.id,
+        expenseAccountID: expenseAccountID,
+        paymentAccountID: paymentAccountID,
+        taxSelection: taxSelection,
+        roundingUnit: roundingUnit,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func reconciliation(statementBalance: Money, bankAccountID: EntityID) -> BankReconciliation? {
+    guard let database, let fiscalYear else { return nil }
+    return try? database.reconcile(
+      statementBalance: statementBalance,
+      bankAccountID: bankAccountID,
+      fiscalYearID: fiscalYear.id
+    )
+  }
+
   var trialBalance: TrialBalance? {
     try? AccountingReports.trialBalance(entries: journalEntries)
   }
@@ -224,6 +403,12 @@ final class AppModel: ObservableObject {
       journalEntries = []
     }
     auditEvents = try database.auditEvents.fetchAll()
+    evidenceDocuments = try database.evidence.search(EvidenceSearch())
+    importBatches = try database.imports.batches()
+    importProfiles = try database.imports.profiles()
+    importedTransactions = try database.imports.transactions(
+      states: Set(ImportedTransactionState.allCases)
+    )
   }
 
   private static func userFacingMessage(for error: Error) -> String {
@@ -246,6 +431,12 @@ final class AppModel: ObservableObject {
       "取消・訂正の理由を入力してください。"
     case RepositoryError.fiscalYearLocked:
       "この年度はロックされています。理由を記録して再オープンしてから操作してください。"
+    case EvidenceError.exactDuplicate:
+      "同じ原本が既に取り込まれています。受信箱の既存証憑を確認してください。"
+    case EvidenceError.originalMutationForbidden:
+      "証憑原本は上書きできません。修正値は候補欄へ記録してください。"
+    case EvidenceError.confirmationRequired:
+      "確認済みの項目だけ転記できます。状態と入力内容を確認してください。"
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }
@@ -263,5 +454,16 @@ final class AppModel: ObservableObject {
       }
     #endif
     return try BlueprintDatabase.openDefault()
+  }
+
+  private static func mimeType(for url: URL) -> String {
+    switch url.pathExtension.lowercased() {
+    case "pdf": "application/pdf"
+    case "png": "image/png"
+    case "jpg", "jpeg": "image/jpeg"
+    case "heic": "image/heic"
+    case "tif", "tiff": "image/tiff"
+    default: "application/octet-stream"
+    }
   }
 }

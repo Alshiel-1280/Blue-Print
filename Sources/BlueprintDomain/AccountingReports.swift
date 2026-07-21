@@ -29,6 +29,17 @@ public struct LedgerItem: Equatable, Sendable, Identifiable {
   public var id: EntityID { lineID }
 }
 
+public struct TaxClassificationBalance: Equatable, Sendable, Identifiable {
+  public let taxRate: TaxRate
+  public let invoiceStatus: InvoiceRegistrationStatus
+  public let deductibleBasisPoints: Int
+  public let taxableAmount: Money
+
+  public var id: String {
+    "\(taxRate.rawValue)|\(invoiceStatus.rawValue)|\(deductibleBasisPoints)"
+  }
+}
+
 public enum AccountingReports {
   public static func trialBalance(entries: [JournalEntry]) throws -> TrialBalance {
     var values: [EntityID: (debit: Money, credit: Money)] = [:]
@@ -75,6 +86,37 @@ public enum AccountingReports {
       }
     }
     return result
+  }
+
+  public static func taxClassificationBalances(entries: [JournalEntry]) throws
+    -> [TaxClassificationBalance]
+  {
+    var result: [TaxClassificationBalance] = []
+    for entry in entries where entry.status.countsInLedger {
+      for line in entry.lines where line.side == .debit {
+        let index = result.firstIndex {
+          $0.taxRate == line.taxRate && $0.invoiceStatus == line.invoiceStatus
+            && $0.deductibleBasisPoints == line.deductibleBasisPoints
+        }
+        if let index {
+          result[index] = TaxClassificationBalance(
+            taxRate: line.taxRate,
+            invoiceStatus: line.invoiceStatus,
+            deductibleBasisPoints: line.deductibleBasisPoints,
+            taxableAmount: try result[index].taxableAmount.adding(line.amount)
+          )
+        } else {
+          result.append(
+            TaxClassificationBalance(
+              taxRate: line.taxRate,
+              invoiceStatus: line.invoiceStatus,
+              deductibleBasisPoints: line.deductibleBasisPoints,
+              taxableAmount: line.amount
+            ))
+        }
+      }
+    }
+    return result.sorted { $0.id < $1.id }
   }
 
   private static func entrySort(_ lhs: JournalEntry, _ rhs: JournalEntry) -> Bool {

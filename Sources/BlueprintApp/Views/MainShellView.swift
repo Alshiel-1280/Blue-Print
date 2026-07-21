@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum AppDestination: String, CaseIterable, Identifiable {
+  case inbox
   case transactionInput
   case journal
   case ledger
@@ -14,6 +15,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
+    case .inbox: "受信箱"
     case .transactionInput: "取引入力"
     case .journal: "仕訳帳"
     case .ledger: "総勘定元帳"
@@ -27,6 +29,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
+    case .inbox: "tray.full"
     case .transactionInput: "square.and.pencil"
     case .journal: "book.closed"
     case .ledger: "books.vertical"
@@ -41,7 +44,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
 struct MainShellView: View {
   @ObservedObject var model: AppModel
-  @State private var destination: AppDestination? = .transactionInput
+  @State private var destination: AppDestination? = .inbox
 
   var body: some View {
     NavigationSplitView {
@@ -60,6 +63,22 @@ struct MainShellView: View {
 
         List(selection: $destination) {
           Section("メイン") {
+            NavigationLink(value: AppDestination.inbox) {
+              HStack {
+                Label(AppDestination.inbox.title, systemImage: AppDestination.inbox.icon)
+                Spacer()
+                let pending =
+                  model.evidenceDocuments.filter { $0.state == .needsReview }.count
+                  + model.importedTransactions.filter { $0.state == .needsReview }.count
+                if pending > 0 {
+                  Text("\(pending)")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.indigo.opacity(0.12), in: Capsule())
+                }
+              }
+            }
             NavigationLink(value: AppDestination.transactionInput) {
               Label(
                 AppDestination.transactionInput.title,
@@ -114,7 +133,9 @@ struct MainShellView: View {
       }
       .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 280)
     } detail: {
-      switch destination ?? .transactionInput {
+      switch destination ?? .inbox {
+      case .inbox:
+        EvidenceInboxView(model: model)
       case .transactionInput:
         JournalEntryView(model: model)
       case .journal:

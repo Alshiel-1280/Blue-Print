@@ -44,6 +44,9 @@ public struct JournalLine: Codable, Equatable, Hashable, Identifiable, Sendable 
   public var side: PostingSide
   public var amount: Money
   public var taxRate: TaxRate
+  public var invoiceStatus: InvoiceRegistrationStatus
+  public var deductibleBasisPoints: Int
+  public var roundingUnit: RoundingUnit
   public var counterparty: String
   public var memo: String
 
@@ -54,16 +57,25 @@ public struct JournalLine: Codable, Equatable, Hashable, Identifiable, Sendable 
     side: PostingSide,
     amount: Money,
     taxRate: TaxRate = .outOfScope,
+    invoiceStatus: InvoiceRegistrationStatus = .unknown,
+    deductibleBasisPoints: Int = 10_000,
+    roundingUnit: RoundingUnit = .line,
     counterparty: String = "",
     memo: String = ""
   ) throws {
     guard amount.yen > 0 else { throw JournalError.amountMustBePositive }
+    guard (0...10_000).contains(deductibleBasisPoints) else {
+      throw JournalError.invalidStateTransition
+    }
     self.id = id
     self.accountID = accountID
     self.subAccountID = subAccountID
     self.side = side
     self.amount = amount
     self.taxRate = taxRate
+    self.invoiceStatus = invoiceStatus
+    self.deductibleBasisPoints = deductibleBasisPoints
+    self.roundingUnit = roundingUnit
     self.counterparty = counterparty
     self.memo = memo
   }
@@ -75,6 +87,9 @@ public struct JournalLine: Codable, Equatable, Hashable, Identifiable, Sendable 
       side: side.opposite,
       amount: amount,
       taxRate: taxRate,
+      invoiceStatus: invoiceStatus,
+      deductibleBasisPoints: deductibleBasisPoints,
+      roundingUnit: roundingUnit,
       counterparty: counterparty,
       memo: memo
     )

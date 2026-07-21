@@ -12,6 +12,8 @@ let package = Package(
     .library(name: "BlueprintAudit", targets: ["BlueprintAudit"]),
     .library(name: "BlueprintPersistence", targets: ["BlueprintPersistence"]),
     .library(name: "BlueprintSharedCapture", targets: ["BlueprintSharedCapture"]),
+    .library(name: "BlueprintDocuments", targets: ["BlueprintDocuments"]),
+    .library(name: "BlueprintImports", targets: ["BlueprintImports"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
   ],
   targets: [
@@ -23,13 +25,25 @@ let package = Package(
     ),
     .target(name: "BlueprintSharedCapture"),
     .target(
+      name: "BlueprintDocuments",
+      dependencies: ["BlueprintDomain"]
+    ),
+    .target(
+      name: "BlueprintImports",
+      dependencies: ["BlueprintDomain", "BlueprintDocuments"]
+    ),
+    .target(
       name: "BlueprintPersistence",
-      dependencies: ["BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "CSQLite"]
+      dependencies: [
+        "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
+        "BlueprintImports", "CSQLite",
+      ]
     ),
     .executableTarget(
       name: "BlueprintApp",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintPersistence", "BlueprintSharedCapture",
+        "BlueprintDocuments", "BlueprintImports",
       ],
       swiftSettings: [
         .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
@@ -49,8 +63,19 @@ let package = Package(
       dependencies: ["BlueprintSharedCapture"]
     ),
     .testTarget(
+      name: "BlueprintDocumentsTests",
+      dependencies: ["BlueprintDocuments", "BlueprintDomain"]
+    ),
+    .testTarget(
+      name: "BlueprintImportsTests",
+      dependencies: ["BlueprintImports", "BlueprintDocuments", "BlueprintDomain"]
+    ),
+    .testTarget(
       name: "BlueprintPersistenceTests",
-      dependencies: ["BlueprintPersistence", "BlueprintDomain", "BlueprintAudit"]
+      dependencies: [
+        "BlueprintPersistence", "BlueprintDomain", "BlueprintAudit", "BlueprintDocuments",
+        "BlueprintImports",
+      ]
     ),
   ]
 )

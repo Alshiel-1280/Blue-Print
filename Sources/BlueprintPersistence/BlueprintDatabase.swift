@@ -1,5 +1,7 @@
 import BlueprintAudit
+import BlueprintDocuments
 import BlueprintDomain
+import BlueprintImports
 import Foundation
 
 public final class BlueprintDatabase: @unchecked Sendable {
@@ -8,6 +10,9 @@ public final class BlueprintDatabase: @unchecked Sendable {
   public let fiscalYears: SQLiteFiscalYearRepository
   public let accounts: SQLiteAccountRepository
   public let journals: SQLiteJournalRepository
+  public let evidence: SQLiteEvidenceRepository
+  public let imports: SQLiteImportRepository
+  public let evidenceFileStore: EvidenceFileStore
   public let auditEvents: SQLiteAuditEventRepository
 
   public init(
@@ -22,6 +27,13 @@ public final class BlueprintDatabase: @unchecked Sendable {
     fiscalYears = SQLiteFiscalYearRepository(connection: connection)
     accounts = SQLiteAccountRepository(connection: connection)
     journals = SQLiteJournalRepository(connection: connection)
+    evidence = SQLiteEvidenceRepository(connection: connection)
+    imports = SQLiteImportRepository(connection: connection)
+    let root = databaseURL.deletingLastPathComponent().deletingLastPathComponent()
+    evidenceFileStore = EvidenceFileStore(
+      originalsDirectory: root.appendingPathComponent("Evidence/Originals", isDirectory: true),
+      derivedDirectory: root.appendingPathComponent("Evidence/Derived", isDirectory: true)
+    )
     auditEvents = SQLiteAuditEventRepository(connection: connection)
   }
 
@@ -287,9 +299,419 @@ public final class BlueprintDatabase: @unchecked Sendable {
     }
   }
 
+  @discardableResult
+  public func importEvidence(
+    from source: URL,
+    mimeType: String,
+    origin: EvidenceOrigin,
+    at date: Date
+  ) throws -> EvidenceDocument {
+    guard try fiscalYears.fetchAll().first?.status != .locked else {
+      throw RepositoryError.fiscalYearLocked
+    }
+    let fingerprint = try evidenceFileStore.fingerprint(source)
+    if let existing = try evidence.fetch(sha256: fingerprint.sha256) {
+      throw EvidenceError.exactDuplicate(existingID: existing.id)
+    }
+    let id = UUID()
+    let stored = try evidenceFileStore.importOriginal(
+      from: source,
+      documentID: id,
+      mimeType: mimeType
+    )
+    let document = EvidenceDocument(
+      metadata: EntityMetadata(id: id, createdAt: date),
+      originalSHA256: stored.sha256,
+      originalRelativePath: stored.relativePath,
+      originalFilename: source.lastPathComponent,
+      mimeType: stored.mimeType,
+      byteCount: stored.byteCount,
+      acquiredAt: date,
+      origin: origin
+    )
+    do {
+      try connection.transaction {
+        try evidence.save(document)
+        try auditEvents.append(
+          AuditEvent(
+            occurredAt: date,
+            actorKind: .localUser,
+            action: .created,
+            targetType: "EvidenceDocument",
+            targetID: document.id.uuidString.lowercased(),
+            reason: origin.rawValue
+          )
+        )
+      }
+      return document
+    } catch {
+      let createdURL = evidenceFileStore.originalURL(relativePath: stored.relativePath)
+      try? FileManager.default.removeItem(at: createdURL)
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func processOCR(
+    evidenceID: EntityID,
+    recognizer: any OCRRecognizing = OnDeviceOCRPipeline(),
+    at date: Date
+  ) throws -> [OCRCandidate] {
+    guard var document = try evidence.fetch(id: evidenceID) else { throw RepositoryError.notFound }
+    let url = evidenceFileStore.originalURL(relativePath: document.originalRelativePath)
+    let candidates = OCRCandidateExtractor.extract(
+      evidenceID: evidenceID,
+      lines: try recognizer.recognize(url: url)
+    )
+    document.state = .needsReview
+    document.transactionDate = Self.bestDate(candidates)
+    document.amount = Self.bestAmount(candidates)
+    document.counterparty = Self.bestValue(.counterparty, candidates: candidates)
+    document.metadata.touch(at: date)
+    try connection.transaction {
+      for candidate in candidates { try evidence.appendCandidate(candidate) }
+      try evidence.save(document)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .system,
+          action: .updated,
+          targetType: "EvidenceDocument",
+          targetID: evidenceID.uuidString.lowercased(),
+          reason: "on-device-ocr-candidates"
+        )
+      )
+    }
+    return candidates
+  }
+
+  public func correctOCRCandidate(
+    id: EntityID,
+    evidenceID: EntityID,
+    value: String,
+    at date: Date
+  ) throws {
+    guard
+      var candidate = try evidence.candidates(evidenceID: evidenceID).first(where: { $0.id == id })
+    else { throw RepositoryError.notFound }
+    let previous = candidate.effectiveValue
+    candidate.correctedValue = value
+    candidate.correctedAt = date
+    try connection.transaction {
+      try evidence.appendCandidate(candidate)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "OCRCandidate",
+          targetID: id.uuidString.lowercased(),
+          reason: "\(candidate.field.rawValue): \(previous) -> \(value)"
+        )
+      )
+    }
+  }
+
+  @discardableResult
+  public func confirmEvidenceAndPost(
+    evidenceID: EntityID,
+    fiscalYearID: EntityID,
+    expenseAccountID: EntityID,
+    paymentAccountID: EntityID,
+    transactionDate: Date,
+    amount: Money,
+    counterparty: String,
+    description: String,
+    taxSelection: TaxSelection,
+    roundingUnit: RoundingUnit,
+    at date: Date
+  ) throws -> JournalEntry {
+    guard amount.yen > 0 else { throw JournalError.amountMustBePositive }
+    guard var document = try evidence.fetch(id: evidenceID) else { throw RepositoryError.notFound }
+    guard document.state == .needsReview || document.state == .unprocessed else {
+      throw EvidenceError.confirmationRequired
+    }
+    guard let fiscalYear = try fiscalYears.fetch(id: fiscalYearID) else {
+      throw RepositoryError.notFound
+    }
+    let treatment = TransitionalTaxRuleResolver.resolve(
+      selection: taxSelection,
+      transactionDate: transactionDate,
+      roundingUnit: roundingUnit
+    )
+    var entry = JournalEntry(
+      metadata: EntityMetadata(createdAt: date),
+      fiscalYearID: fiscalYearID,
+      transactionDate: transactionDate,
+      description: description,
+      lines: [
+        try JournalLine(
+          accountID: expenseAccountID,
+          side: .debit,
+          amount: amount,
+          taxRate: treatment.selection.taxRate,
+          invoiceStatus: treatment.selection.invoiceStatus,
+          deductibleBasisPoints: treatment.deductibleBasisPoints,
+          roundingUnit: treatment.roundingUnit,
+          counterparty: counterparty
+        ),
+        try JournalLine(
+          accountID: paymentAccountID,
+          side: .credit,
+          amount: amount,
+          taxRate: .outOfScope,
+          roundingUnit: roundingUnit,
+          counterparty: counterparty
+        ),
+      ]
+    )
+    try entry.post(for: fiscalYear, at: date)
+    document.state = .posted
+    document.transactionDate = transactionDate
+    document.amount = amount
+    document.counterparty = counterparty
+    document.metadata.touch(at: date)
+    try connection.transaction {
+      try journals.persist(entry)
+      try evidence.save(document)
+      try evidence.link(
+        EvidenceLink(
+          evidenceID: evidenceID,
+          journalEntryID: entry.id,
+          linkedAt: date
+        ))
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "EvidenceDocument",
+          targetID: evidenceID.uuidString.lowercased(),
+          reason: "confirmed-and-posted"
+        )
+      )
+    }
+    return entry
+  }
+
+  public func importCSV(
+    data: Data,
+    filename: String,
+    profile: ImportProfile,
+    at date: Date
+  ) throws -> ImportBatch {
+    guard try fiscalYears.fetchAll().first?.status != .locked else {
+      throw RepositoryError.fiscalYearLocked
+    }
+    let existing = try imports.transactions(states: Set(ImportedTransactionState.allCases))
+    let batch = try CSVImporter.makeBatch(
+      data: data,
+      filename: filename,
+      profile: profile,
+      existing: existing,
+      importedAt: date
+    )
+    try connection.transaction {
+      try imports.saveProfile(profile)
+      try imports.persistBatch(batch)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .importer,
+          action: .created,
+          targetType: "ImportBatch",
+          targetID: batch.id.uuidString.lowercased(),
+          reason: "\(batch.transactions.count) rows, \(batch.errors.count) errors"
+        )
+      )
+    }
+    return batch
+  }
+
+  public func evidenceCandidates(
+    for transactionID: EntityID
+  ) throws -> [TransactionEvidenceCandidate] {
+    let all = try imports.transactions(states: Set(ImportedTransactionState.allCases))
+    guard let transaction = all.first(where: { $0.id == transactionID }) else {
+      throw RepositoryError.notFound
+    }
+    let dayStart = Calendar(identifier: .gregorian).startOfDay(for: transaction.transactionDate)
+    let dayEnd = Calendar(identifier: .gregorian)
+      .date(byAdding: .day, value: 1, to: dayStart)!
+      .addingTimeInterval(-0.001)
+    let documents = try evidence.search(
+      EvidenceSearch(
+        dateRange: dayStart...dayEnd,
+        amount: Money(yen: abs(transaction.amount.yen))
+      ))
+    let normalizedDescription = transaction.description.normalizedForEvidenceMatch
+    return documents.map { document in
+      var score = 0.75
+      var reasons = ["日付一致", "金額一致"]
+      if let counterparty = document.counterparty?.normalizedForEvidenceMatch,
+        !counterparty.isEmpty,
+        normalizedDescription.contains(counterparty)
+          || counterparty.contains(normalizedDescription)
+      {
+        score = 1
+        reasons.append("取引先一致")
+      }
+      return TransactionEvidenceCandidate(
+        evidenceID: document.id,
+        score: score,
+        reasons: reasons
+      )
+    }.sorted { $0.score > $1.score }
+  }
+
+  public func associateEvidence(
+    transactionID: EntityID,
+    evidenceID: EntityID,
+    at date: Date
+  ) throws {
+    let all = try imports.transactions(states: Set(ImportedTransactionState.allCases))
+    guard var transaction = all.first(where: { $0.id == transactionID }) else {
+      throw RepositoryError.notFound
+    }
+    guard try evidence.fetch(id: evidenceID) != nil else { throw RepositoryError.notFound }
+    transaction.evidenceID = evidenceID
+    transaction.state = .needsReview
+    try connection.transaction {
+      try imports.updateTransaction(transaction)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "ImportedTransaction",
+          targetID: transactionID.uuidString.lowercased(),
+          reason: "evidence-associated:\(evidenceID.uuidString.lowercased())"
+        ))
+    }
+  }
+
+  @discardableResult
+  public func confirmImportedTransaction(
+    transactionID: EntityID,
+    fiscalYearID: EntityID,
+    expenseAccountID: EntityID,
+    paymentAccountID: EntityID,
+    taxSelection: TaxSelection,
+    roundingUnit: RoundingUnit,
+    at date: Date
+  ) throws -> JournalEntry {
+    let all = try imports.transactions(states: Set(ImportedTransactionState.allCases))
+    guard var transaction = all.first(where: { $0.id == transactionID }) else {
+      throw RepositoryError.notFound
+    }
+    guard transaction.state != .posted, transaction.state != .excluded else {
+      throw EvidenceError.confirmationRequired
+    }
+    guard let fiscalYear = try fiscalYears.fetch(id: fiscalYearID) else {
+      throw RepositoryError.notFound
+    }
+    let amount = Money(yen: abs(transaction.amount.yen))
+    guard amount.yen > 0 else { throw JournalError.amountMustBePositive }
+    let treatment = TransitionalTaxRuleResolver.resolve(
+      selection: taxSelection,
+      transactionDate: transaction.transactionDate,
+      roundingUnit: roundingUnit
+    )
+    var entry = JournalEntry(
+      metadata: EntityMetadata(createdAt: date),
+      fiscalYearID: fiscalYearID,
+      transactionDate: transaction.transactionDate,
+      description: transaction.description,
+      lines: [
+        try JournalLine(
+          accountID: expenseAccountID,
+          side: .debit,
+          amount: amount,
+          taxRate: treatment.selection.taxRate,
+          invoiceStatus: treatment.selection.invoiceStatus,
+          deductibleBasisPoints: treatment.deductibleBasisPoints,
+          roundingUnit: treatment.roundingUnit,
+          counterparty: transaction.description
+        ),
+        try JournalLine(
+          accountID: paymentAccountID,
+          side: .credit,
+          amount: amount,
+          taxRate: .outOfScope,
+          roundingUnit: roundingUnit
+        ),
+      ]
+    )
+    try entry.post(for: fiscalYear, at: date)
+    transaction.state = .posted
+    transaction.journalEntryID = entry.id
+    try connection.transaction {
+      try journals.persist(entry)
+      try imports.updateTransaction(transaction)
+      if let evidenceID = transaction.evidenceID {
+        try evidence.link(
+          EvidenceLink(evidenceID: evidenceID, journalEntryID: entry.id, linkedAt: date)
+        )
+      }
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "ImportedTransaction",
+          targetID: transactionID.uuidString.lowercased(),
+          reason: "confirmed-and-posted"
+        ))
+    }
+    return entry
+  }
+
+  public func reconcile(
+    statementBalance: Money,
+    bankAccountID: EntityID,
+    fiscalYearID: EntityID
+  ) throws -> BankReconciliation {
+    let entries = try journals.search(JournalSearch(fiscalYearID: fiscalYearID))
+    let bookBalance =
+      try AccountingReports.ledger(accountID: bankAccountID, entries: entries)
+      .last?.runningBalance ?? .zero
+    return BankReconciliation(statementBalance: statementBalance, bookBalance: bookBalance)
+  }
+
+  private static func bestValue(_ field: OCRField, candidates: [OCRCandidate]) -> String? {
+    candidates.filter { $0.field == field }.max { $0.confidence < $1.confidence }?.effectiveValue
+  }
+
+  private static func bestAmount(_ candidates: [OCRCandidate]) -> Money? {
+    guard let value = bestValue(.amount, candidates: candidates) else { return nil }
+    let digits = value.filter(\.isNumber)
+    return Int64(digits).map(Money.init(yen:))
+  }
+
+  private static func bestDate(_ candidates: [OCRCandidate]) -> Date? {
+    guard var value = bestValue(.transactionDate, candidates: candidates) else { return nil }
+    value = value.replacingOccurrences(of: "年", with: "/")
+      .replacingOccurrences(of: "月", with: "/")
+      .replacingOccurrences(of: "日", with: "")
+      .replacingOccurrences(of: ".", with: "/")
+      .replacingOccurrences(of: "-", with: "/")
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "ja_JP_POSIX")
+    formatter.dateFormat = "yyyy/M/d"
+    return formatter.date(from: value)
+  }
+
   public func isSetupComplete() throws -> Bool {
     let hasProfile = try !profiles.fetchAll().isEmpty
     let hasFiscalYear = try !fiscalYears.fetchAll().isEmpty
     return hasProfile && hasFiscalYear
+  }
+}
+
+extension String {
+  fileprivate var normalizedForEvidenceMatch: String {
+    folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+      .replacingOccurrences(of: " ", with: "")
+      .replacingOccurrences(of: "　", with: "")
   }
 }

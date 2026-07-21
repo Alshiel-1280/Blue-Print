@@ -19,14 +19,40 @@ public enum SampleDatabaseFactory {
     profileName: String = "移行テスト事業者",
     date: Date = Date(timeIntervalSince1970: 1_700_000_000)
   ) throws {
+    try makeVersion3Database(at: databaseURL, profileName: profileName, date: date)
+    let connection = try SQLiteConnection(databaseURL: databaseURL)
+    try connection.execute("DROP TABLE journal_lines")
+    try connection.execute("DROP TABLE journal_entries")
+    try connection.execute("PRAGMA user_version = 2")
+  }
+
+  public static func makeVersion3Database(
+    at databaseURL: URL,
+    profileName: String = "移行テスト事業者",
+    date: Date = Date(timeIntervalSince1970: 1_700_000_000)
+  ) throws {
     let connection = try SQLiteConnection(databaseURL: databaseURL)
     try DatabaseMigrator().migrate(
       connection: connection,
       backupHook: NoopMigrationBackupHook()
     )
-    try connection.execute("DROP TABLE journal_lines")
-    try connection.execute("DROP TABLE journal_entries")
-    try connection.execute("PRAGMA user_version = 2")
+    try connection.execute("DROP TABLE evidence_links")
+    try connection.execute("DROP TABLE ocr_candidates")
+    try connection.execute("DROP TABLE import_row_errors")
+    try connection.execute("DROP TABLE imported_transactions")
+    try connection.execute("DROP TABLE import_batches")
+    try connection.execute("DROP TABLE import_profiles")
+    try connection.execute("DROP TABLE evidence_documents")
+    try connection.execute("ALTER TABLE journal_lines DROP COLUMN rounding_unit")
+    try connection.execute("ALTER TABLE journal_lines DROP COLUMN deductible_basis_points")
+    try connection.execute("ALTER TABLE journal_lines DROP COLUMN invoice_status")
+    try connection.execute(
+      "UPDATE version_metadata SET value = '0.2.1' WHERE key = 'app_version'"
+    )
+    try connection.execute(
+      "UPDATE version_metadata SET value = '2' WHERE key = 'data_format_version'"
+    )
+    try connection.execute("PRAGMA user_version = 3")
 
     let fiscalYear = try FiscalYear(
       metadata: EntityMetadata(createdAt: date),
