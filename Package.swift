@@ -17,6 +17,8 @@ let package = Package(
     .library(name: "BlueprintBilling", targets: ["BlueprintBilling"]),
     .library(name: "BlueprintClosing", targets: ["BlueprintClosing"]),
     .library(name: "BlueprintFiling", targets: ["BlueprintFiling"]),
+    .library(name: "BlueprintTax", targets: ["BlueprintTax"]),
+    .library(name: "BlueprintETax", targets: ["BlueprintETax"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
   ],
   targets: [
@@ -48,10 +50,20 @@ let package = Package(
       dependencies: ["BlueprintDomain", "BlueprintDocuments", "BlueprintClosing"]
     ),
     .target(
+      name: "BlueprintTax",
+      dependencies: ["BlueprintDomain", "BlueprintClosing", "BlueprintFiling"]
+    ),
+    .target(
+      name: "BlueprintETax",
+      dependencies: ["BlueprintDomain", "BlueprintFiling", "BlueprintTax"]
+    ),
+    .target(
       name: "BlueprintPersistence",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
-        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling", "CSQLite",
+        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
+        "BlueprintTax",
+        "BlueprintETax", "CSQLite",
       ]
     ),
     .executableTarget(
@@ -59,7 +71,7 @@ let package = Package(
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintPersistence", "BlueprintSharedCapture",
         "BlueprintDocuments", "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
-        "BlueprintFiling",
+        "BlueprintFiling", "BlueprintTax", "BlueprintETax",
       ],
       swiftSettings: [
         .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
@@ -99,10 +111,20 @@ let package = Package(
       dependencies: ["BlueprintFiling", "BlueprintClosing", "BlueprintDomain"]
     ),
     .testTarget(
+      name: "BlueprintTaxTests",
+      dependencies: ["BlueprintTax", "BlueprintClosing", "BlueprintFiling", "BlueprintDomain"]
+    ),
+    .testTarget(
+      name: "BlueprintETaxTests",
+      dependencies: ["BlueprintETax", "BlueprintTax", "BlueprintFiling", "BlueprintDomain"]
+    ),
+    .testTarget(
       name: "BlueprintPersistenceTests",
       dependencies: [
         "BlueprintPersistence", "BlueprintDomain", "BlueprintAudit", "BlueprintDocuments",
         "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
+        "BlueprintTax",
+        "BlueprintETax",
       ]
     ),
   ]

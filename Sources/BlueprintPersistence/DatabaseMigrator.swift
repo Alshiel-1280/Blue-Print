@@ -80,6 +80,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion6(connection)
     case 7:
       try applyVersion7(connection)
+    case 8:
+      try applyVersion8(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -607,6 +609,43 @@ public struct DatabaseMigrator: Sendable {
       bindings: [
         .text("app_version"), .text(BlueprintVersions.app),
         .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+      ]
+    )
+  }
+
+  private func applyVersion8(_ connection: SQLiteConnection) throws {
+    if try connection.scalarInt(
+      "SELECT COUNT(*) FROM pragma_table_info('business_profiles') WHERE name = 'tax_office_code'"
+    ) == 0 {
+      try connection.execute(
+        "ALTER TABLE business_profiles ADD COLUMN tax_office_code TEXT NOT NULL DEFAULT ''")
+    }
+    if try connection.scalarInt(
+      "SELECT COUNT(*) FROM pragma_table_info('business_profiles') WHERE name = 'e_tax_user_id'"
+    ) == 0 {
+      try connection.execute(
+        "ALTER TABLE business_profiles ADD COLUMN e_tax_user_id TEXT NOT NULL DEFAULT ''")
+    }
+    try connection.execute(
+      """
+      CREATE TABLE e_tax_exports (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          exported_at REAL NOT NULL,
+          file_hash TEXT NOT NULL,
+          payload_json TEXT NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      "CREATE INDEX e_tax_exports_year_index ON e_tax_exports(fiscal_year_id, exported_at)"
+    )
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("tax_rule_set_version"), .text(BlueprintVersions.taxRuleSet),
+        .text("form_rule_set_version"), .text(BlueprintVersions.formRuleSet),
       ]
     )
   }

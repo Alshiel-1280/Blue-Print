@@ -159,7 +159,7 @@ final class PersistenceTests: XCTestCase {
     let backups = try FileManager.default.contentsOfDirectory(
       at: backupDirectory, includingPropertiesForKeys: nil)
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v1-to-v7"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v1-to-v8"))
   }
 
   func testVersion2DatabaseMigratesToJournalSchemaWithoutDataLoss() throws {
@@ -183,7 +183,7 @@ final class PersistenceTests: XCTestCase {
     let backups = try FileManager.default.contentsOfDirectory(
       at: backupDirectory, includingPropertiesForKeys: nil)
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v2-to-v7"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v2-to-v8"))
   }
 
   func testJournalPostingRoundTripSearchAndPhysicalDeletionBoundary() throws {

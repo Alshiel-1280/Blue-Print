@@ -25,6 +25,8 @@ public struct BusinessProfile: Codable, Equatable, Sendable, Identifiable {
   public var postalAddress: String
   public var taxAddress: String
   public var taxOffice: String
+  public var taxOfficeCode: String
+  public var eTaxUserID: String
   public var industry: String
   public var openedOn: Date?
   public var blueReturnApproved: Bool
@@ -48,6 +50,8 @@ public struct BusinessProfile: Codable, Equatable, Sendable, Identifiable {
     postalAddress: String = "",
     taxAddress: String = "",
     taxOffice: String = "",
+    taxOfficeCode: String = "",
+    eTaxUserID: String = "",
     industry: String = "",
     openedOn: Date? = nil,
     blueReturnApproved: Bool = true,
@@ -68,6 +72,8 @@ public struct BusinessProfile: Codable, Equatable, Sendable, Identifiable {
     self.postalAddress = postalAddress
     self.taxAddress = taxAddress
     self.taxOffice = taxOffice
+    self.taxOfficeCode = taxOfficeCode
+    self.eTaxUserID = eTaxUserID
     self.industry = industry
     self.openedOn = openedOn
     self.blueReturnApproved = blueReturnApproved

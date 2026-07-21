@@ -14,17 +14,19 @@ public final class SQLiteBusinessProfileRepository: BusinessProfileRepository, @
       """
       INSERT INTO business_profiles (
           id, fiscal_year_id, owner_name, trade_name, postal_address, tax_address,
-          tax_office, industry, opened_on, blue_return_approved, bookkeeping_style,
+          tax_office, tax_office_code, e_tax_user_id, industry, opened_on, blue_return_approved, bookkeeping_style,
           consumption_tax_status, invoice_registration_status, invoice_registration_number,
           invoice_registered_on, invoice_cancelled_on, tax_accounting_method, rounding_rule,
           default_tax_rate, created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET
           owner_name = excluded.owner_name,
           trade_name = excluded.trade_name,
           postal_address = excluded.postal_address,
           tax_address = excluded.tax_address,
           tax_office = excluded.tax_office,
+          tax_office_code = excluded.tax_office_code,
+          e_tax_user_id = excluded.e_tax_user_id,
           industry = excluded.industry,
           opened_on = excluded.opened_on,
           blue_return_approved = excluded.blue_return_approved,
@@ -247,6 +249,8 @@ extension BusinessProfile {
       .text(postalAddress),
       .text(taxAddress),
       .text(taxOffice),
+      .text(taxOfficeCode),
+      .text(eTaxUserID),
       .text(industry),
       openedOn.sqliteValue,
       .integer(blueReturnApproved ? 1 : 0),
@@ -273,6 +277,8 @@ extension BusinessProfile {
       postalAddress: try row.text("postal_address"),
       taxAddress: try row.text("tax_address"),
       taxOffice: try row.text("tax_office"),
+      taxOfficeCode: try row.text("tax_office_code"),
+      eTaxUserID: try row.text("e_tax_user_id"),
       industry: try row.text("industry"),
       openedOn: row.dateIfPresent("opened_on"),
       blueReturnApproved: try row.bool("blue_return_approved"),

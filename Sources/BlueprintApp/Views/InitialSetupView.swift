@@ -1,4 +1,5 @@
 import BlueprintDomain
+import BlueprintTax
 import SwiftUI
 
 struct InitialSetupView: View {
@@ -16,6 +17,10 @@ struct InitialSetupView: View {
   private var canContinue: Bool {
     !ownerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && !tradeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private var hasFilingRules: Bool {
+    (try? OfficialRules2025.catalog.rules(for: calendarYear)) != nil
   }
 
   var body: some View {
@@ -68,6 +73,14 @@ struct InitialSetupView: View {
               TextField("屋号", text: $tradeName, prompt: Text("青空デザイン"))
                 .accessibilityHint("屋号がない場合は氏名を入力します")
               Stepper("申告年度: \(calendarYear)年", value: $calendarYear, in: 2000...2100)
+              if !hasFilingRules {
+                Label(
+                  "この年度の申告・e-Taxルールは未登録です。帳簿は作成できますが、申告出力はルール追加後に利用できます。",
+                  systemImage: "exclamationmark.triangle"
+                )
+                .font(.callout)
+                .foregroundStyle(.orange)
+              }
             }
 
             Section("申告と記帳") {

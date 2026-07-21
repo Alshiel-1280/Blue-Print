@@ -3,9 +3,11 @@ import BlueprintBilling
 import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
+import BlueprintETax
 import BlueprintFiling
 import BlueprintImports
 import BlueprintPersistence
+import BlueprintTax
 import Combine
 import Foundation
 
@@ -34,6 +36,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var otherIncomeEntries: [OtherIncomeEntry] = []
   @Published private(set) var filingDeductions: [FilingDeduction] = []
   @Published private(set) var unsupportedFilingCases: [UnsupportedFilingCase] = []
+  @Published private(set) var eTaxExports: [ETaxExportRecord] = []
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -81,11 +84,12 @@ final class AppModel: ObservableObject {
 
     do {
       let now = clock.now()
+      let configuredRules = try? OfficialRules2025.catalog.rules(for: calendarYear)
       let fiscalYear = try FiscalYear(
         metadata: EntityMetadata(createdAt: now),
         calendarYear: calendarYear,
-        taxRuleSetID: BlueprintVersions.taxRuleSet,
-        formRuleSetID: BlueprintVersions.formRuleSet
+        taxRuleSetID: configuredRules?.0.id ?? "tax-\(calendarYear)-unavailable",
+        formRuleSetID: configuredRules?.1.id ?? "form-\(calendarYear)-unavailable"
       )
       let profile = BusinessProfile(
         metadata: EntityMetadata(createdAt: now),
@@ -926,8 +930,164 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func generateETaxPackage() -> ETaxGeneratedPackage? {
+    guard let data = eTaxReturnData, let blueReturnPackage else {
+      errorMessage = "対象年度の申告データを生成できません。事業者設定と決算結果を確認してください。"
+      return nil
+    }
+    do {
+      let issues = ETaxValidator.validate(
+        data, rules: try currentRules().1, blueReturn: blueReturnPackage)
+      let package = try XTXGenerator.generate(data, validationIssues: issues)
+      errorMessage = nil
+      return package
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+      return nil
+    }
+  }
+
+  func recordETaxExport(_ package: ETaxGeneratedPackage) {
+    guard let database, let fiscalYear, let data = eTaxReturnData else { return }
+    do {
+      let now = clock.now()
+      try database.saveETaxExport(
+        ETaxExportRecord(
+          fiscalYearID: fiscalYear.id,
+          exportedAt: now,
+          fileName: package.fileName,
+          fileHash: package.hash,
+          taxRuleSetID: data.taxRuleSetID,
+          formRuleSetID: data.formRuleSetID,
+          schemaVersion: data.procedureVersion,
+          ledgerFingerprint: data.ledgerFingerprint,
+          checklist: data.checklist
+        ),
+        at: now
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func attachETaxReceipt(from url: URL) {
+    guard let database, let fiscalYear else { return }
+    let didAccess = url.startAccessingSecurityScopedResource()
+    defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let now = clock.now()
+      let document = try database.importEvidence(
+        from: url,
+        mimeType: Self.mimeType(for: url),
+        origin: .electronicTransaction,
+        at: now
+      )
+      var workspace =
+        filingWorkspace
+        ?? FilingWorkspace(metadata: EntityMetadata(createdAt: now), fiscalYearID: fiscalYear.id)
+      workspace.attach(
+        FilingAttachment(
+          evidenceDocumentID: document.id,
+          title: url.deletingPathExtension().lastPathComponent,
+          category: "e-Tax受付・申告控え"
+        ),
+        at: now
+      )
+      try database.filing.saveWorkspace(workspace)
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
   var propertyIncomeReport: PropertyIncomeReport {
     PropertyIncomeReport.make(entries: rentalLedgerEntries)
+  }
+
+  var blueReturnPackage: BlueReturnPackage? {
+    guard let fiscalYear, let profile, let annualProfitAndLoss, let annualBalanceSheet else {
+      return nil
+    }
+    return BlueReturnMapper.make(
+      fiscalYear: fiscalYear.calendarYear,
+      profile: profile,
+      profitAndLoss: annualProfitAndLoss,
+      balanceSheet: annualBalanceSheet,
+      businessSnapshot: BusinessIncomeSnapshot(
+        revenue: annualProfitAndLoss.totalRevenue,
+        expenses: annualProfitAndLoss.totalExpenses,
+        income: annualProfitAndLoss.profit,
+        generatedAt: clock.now()
+      ),
+      propertyReport: propertyIncomeReport
+    )
+  }
+
+  var blueReturnDeductionAssessment: BlueReturnDeductionAssessment? {
+    guard let profile, let annualBalanceSheet, let rules = try? currentRules() else { return nil }
+    return BlueReturnMapper.deductionAssessment(
+      profile: profile,
+      balanceSheet: annualBalanceSheet,
+      taxRuleSet: rules.0,
+      intendsElectronicFiling: true
+    )
+  }
+
+  var eTaxReturnData: ETaxReturnData? {
+    guard let fiscalYear, let profile, let blueReturnPackage,
+      let blueReturnDeductionAssessment, let filingSummary,
+      let rules = try? currentRules()
+    else { return nil }
+    return ETaxMapper.make(
+      fiscalYear: fiscalYear.calendarYear,
+      profile: profile,
+      blueReturn: blueReturnPackage,
+      deductionAssessment: blueReturnDeductionAssessment,
+      filingSummary: filingSummary,
+      deductions: filingDeductions,
+      unsupportedCases: unsupportedFilingCases,
+      taxRuleSet: rules.0,
+      formRuleSet: rules.1,
+      ledgerFingerprint: currentLedgerFingerprint
+    )
+  }
+
+  var eTaxValidationIssues: [ETaxValidationIssue] {
+    guard let data = eTaxReturnData, let blueReturnPackage, let rules = try? currentRules() else {
+      return [
+        ETaxValidationIssue(
+          fieldTag: nil,
+          message: "この年度の税務・e-Taxルールはまだ登録されていません。",
+          severity: .error
+        )
+      ]
+    }
+    return ETaxValidator.validate(data, rules: rules.1, blueReturn: blueReturnPackage)
+  }
+
+  var eTaxNeedsRegeneration: Bool {
+    eTaxExports.first?.needsRegeneration(currentLedgerFingerprint: currentLedgerFingerprint)
+      ?? false
+  }
+
+  var currentFormRuleSet: FormRuleSet? { try? currentRules().1 }
+
+  private var currentLedgerFingerprint: String {
+    XTXGenerator.ledgerFingerprint(parts: [
+      journalEntries.map { "\($0.id)|\($0.metadata.updatedAt.timeIntervalSince1970)" }.joined(),
+      rentalLedgerEntries.map { "\($0.id)|\($0.amount.yen)" }.joined(),
+      wageStatements.map { "\($0.id)|\($0.paymentAmount.yen)" }.joined(),
+      securitiesReports.map { "\($0.id)|\($0.proceeds.yen)|\($0.acquisitionCost.yen)" }.joined(),
+      filingDeductions.map { "\($0.id)|\($0.amount.yen)" }.joined(),
+    ])
+  }
+
+  private func currentRules() throws -> (TaxRuleSet, FormRuleSet) {
+    guard let fiscalYear else { throw RuleSetError.unsupportedYear(0) }
+    return try OfficialRules2025.catalog.rules(for: fiscalYear.calendarYear)
   }
 
   var filingSummary: FilingWorkspaceSummary? {
@@ -1102,6 +1262,7 @@ final class AppModel: ObservableObject {
       otherIncomeEntries = try database.filing.otherIncome(fiscalYearID: fiscalYear.id)
       filingDeductions = try database.filing.deductions(fiscalYearID: fiscalYear.id)
       unsupportedFilingCases = try database.filing.unsupportedCases(fiscalYearID: fiscalYear.id)
+      eTaxExports = try database.eTax.exports(fiscalYearID: fiscalYear.id)
     } else {
       fixedAssets = []
       closingChecklist = ClosingChecklist(items: [])
@@ -1114,6 +1275,7 @@ final class AppModel: ObservableObject {
       otherIncomeEntries = []
       filingDeductions = []
       unsupportedFilingCases = []
+      eTaxExports = []
     }
   }
 
@@ -1143,6 +1305,10 @@ final class AppModel: ObservableObject {
       "金額は1円以上で入力してください。"
     case JournalError.dateOutsideFiscalYear:
       "取引日が申告年度の範囲外です。年度内の日付へ修正してください。"
+    case RuleSetError.unsupportedYear(let year):
+      "\(year)年分の税務・e-Taxルールは未対応です。対応年度を確認してください。"
+    case XTXGenerationError.validationFailed(let issues):
+      "e-Tax出力前の検証で\(issues.count)件のエラーが見つかりました。申告ワークスペースで修正してください。"
     case JournalError.missingReason:
       "取消・訂正の理由を入力してください。"
     case RepositoryError.fiscalYearLocked:

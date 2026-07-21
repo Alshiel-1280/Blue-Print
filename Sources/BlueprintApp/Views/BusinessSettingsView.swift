@@ -40,6 +40,8 @@ struct BusinessSettingsView: View {
               TextField("住所", text: draftBinding.postalAddress)
               TextField("納税地", text: draftBinding.taxAddress)
               TextField("所轄税務署", text: draftBinding.taxOffice)
+              TextField("税務署番号（5桁）", text: draftBinding.taxOfficeCode)
+              TextField("e-Tax利用者識別番号（16桁）", text: draftBinding.eTaxUserID)
               TextField("業種", text: draftBinding.industry)
             }
             Section("税務") {

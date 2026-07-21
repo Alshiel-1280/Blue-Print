@@ -3,6 +3,7 @@ import BlueprintBilling
 import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
+import BlueprintETax
 import BlueprintFiling
 import BlueprintImports
 import Foundation
@@ -18,6 +19,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
   public let billing: SQLiteBillingRepository
   public let closing: SQLiteClosingRepository
   public let filing: SQLiteFilingRepository
+  public let eTax: SQLiteETaxRepository
   public let evidenceFileStore: EvidenceFileStore
   public let auditEvents: SQLiteAuditEventRepository
 
@@ -38,6 +40,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
     billing = SQLiteBillingRepository(connection: connection)
     closing = SQLiteClosingRepository(connection: connection)
     filing = SQLiteFilingRepository(connection: connection)
+    eTax = SQLiteETaxRepository(connection: connection)
     let root = databaseURL.deletingLastPathComponent().deletingLastPathComponent()
     evidenceFileStore = EvidenceFileStore(
       originalsDirectory: root.appendingPathComponent("Evidence/Originals", isDirectory: true),
@@ -1375,6 +1378,21 @@ public final class BlueprintDatabase: @unchecked Sendable {
       try filing.saveDeduction(deduction)
       try attachToFilingWorkspace(attachment, fiscalYearID: deduction.fiscalYearID, at: date)
       try appendFilingAudit(targetType: "FilingDeduction", id: deduction.id, at: date)
+    }
+  }
+
+  public func saveETaxExport(_ record: ETaxExportRecord, at date: Date) throws {
+    try connection.transaction {
+      try eTax.saveExport(record)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .created,
+          targetType: "ETaxExportRecord",
+          targetID: record.id.uuidString.lowercased(),
+          reason: "hash:\(record.fileHash)"
+        ))
     }
   }
 

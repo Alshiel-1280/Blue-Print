@@ -1,6 +1,9 @@
 import BlueprintDomain
+import BlueprintETax
 import BlueprintFiling
+import BlueprintTax
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum FilingMode: String, CaseIterable, Identifiable {
   case summary = "申告サマリー"
@@ -8,6 +11,7 @@ private enum FilingMode: String, CaseIterable, Identifiable {
   case property = "不動産"
   case securities = "株式・配当"
   case other = "その他・控除"
+  case eTax = "青色申告・e-Tax"
 
   var id: String { rawValue }
 }
@@ -29,6 +33,11 @@ struct FilingWorkspaceView: View {
   @ObservedObject var model: AppModel
   @State private var mode: FilingMode = .summary
   @State private var entryKind: FilingEntryKind?
+  @State private var exportDocument: FilingXTXDocument?
+  @State private var pendingExport: ETaxGeneratedPackage?
+  @State private var exportFileName = "blue-print.xtx"
+  @State private var isExporting = false
+  @State private var isImportingReceipt = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -40,11 +49,38 @@ struct FilingWorkspaceView: View {
       case .property: propertyWorkspace
       case .securities: securitiesWorkspace
       case .other: otherWorkspace
+      case .eTax: eTaxWorkspace
       }
     }
     .background(Color(nsColor: .windowBackgroundColor))
     .sheet(item: $entryKind) { kind in
       FilingEntrySheet(model: model, kind: kind) { entryKind = nil }
+    }
+    .fileExporter(
+      isPresented: $isExporting,
+      document: exportDocument,
+      contentType: UTType(filenameExtension: "xtx") ?? .xml,
+      defaultFilename: exportFileName
+    ) { result in
+      switch result {
+      case .success:
+        if let pendingExport { model.recordETaxExport(pendingExport) }
+      case .failure(let error):
+        model.errorMessage = error.localizedDescription
+      }
+      exportDocument = nil
+      pendingExport = nil
+    }
+    .fileImporter(
+      isPresented: $isImportingReceipt,
+      allowedContentTypes: [.pdf, .png, .jpeg, .heic],
+      allowsMultipleSelection: false
+    ) { result in
+      if case .success(let urls) = result, let url = urls.first {
+        model.attachETaxReceipt(from: url)
+      } else if case .failure(let error) = result {
+        model.errorMessage = error.localizedDescription
+      }
     }
   }
 
@@ -61,7 +97,7 @@ struct FilingWorkspaceView: View {
         ForEach(FilingMode.allCases) { Text($0.rawValue).tag($0) }
       }
       .pickerStyle(.segmented)
-      .frame(width: 570)
+      .frame(width: 650)
     }
     .padding(.horizontal, 24)
     .padding(.vertical, 18)
@@ -230,6 +266,189 @@ struct FilingWorkspaceView: View {
         }
       }
       .padding(20)
+    }
+  }
+
+  private var eTaxWorkspace: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 22) {
+        HStack(alignment: .top, spacing: 16) {
+          VStack(alignment: .leading, spacing: 5) {
+            Text("対象年度").font(.caption).foregroundStyle(.secondary)
+            Text(model.fiscalYear.map { "\($0.calendarYear)年分" } ?? "未設定")
+              .font(.title2.weight(.semibold))
+            Text(model.currentFormRuleSet?.procedureID ?? "年度ルール未対応")
+              .font(.caption2).foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          VStack(alignment: .leading, spacing: 5) {
+            Text("青色申告特別控除").font(.caption).foregroundStyle(.secondary)
+            Text(yenFiling(model.blueReturnDeductionAssessment?.candidateAmount.yen ?? 0))
+              .font(.title2.weight(.semibold).monospacedDigit())
+            Text(
+              model.blueReturnDeductionAssessment?.isEligible == true
+                ? "適用候補" : "不足要件あり"
+            )
+            .font(.caption2).foregroundStyle(
+              model.blueReturnDeductionAssessment?.isEligible == true ? .green : .orange)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          VStack(alignment: .leading, spacing: 5) {
+            Text("出力前検証").font(.caption).foregroundStyle(.secondary)
+            let errors = model.eTaxValidationIssues.filter { $0.severity == .error }.count
+            Text(errors == 0 ? "準備完了" : "\(errors)件のエラー")
+              .font(.title2.weight(.semibold))
+              .foregroundStyle(errors == 0 ? .green : .red)
+            Text("必須・型・桁・帳票整合").font(.caption2).foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          VStack(alignment: .leading, spacing: 5) {
+            Text("最終出力").font(.caption).foregroundStyle(.secondary)
+            Text(
+              model.eTaxExports.first?.exportedAt.formatted(date: .numeric, time: .shortened)
+                ?? "未出力"
+            )
+            .font(.title3.weight(.semibold))
+            Text(model.eTaxNeedsRegeneration ? "帳簿変更あり・再出力が必要" : "最新の帳簿と一致")
+              .font(.caption2)
+              .foregroundStyle(model.eTaxNeedsRegeneration ? .orange : .secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        Divider()
+
+        HStack(alignment: .top, spacing: 28) {
+          VStack(alignment: .leading, spacing: 12) {
+            Label("青色申告決算書 確認表示", systemImage: "doc.text.magnifyingglass")
+              .font(.headline)
+            if let package = model.blueReturnPackage {
+              filingAmount("事業収入", package.business.totalRevenue.yen)
+              filingAmount("必要経費", package.business.totalExpenses.yen)
+              filingAmount("事業所得", package.business.incomeBeforeDeduction.yen, emphasized: true)
+              filingAmount("資産合計", package.business.totalAssets.yen)
+              filingAmount("負債・資本合計", package.business.totalLiabilitiesAndEquity.yen)
+              Divider()
+              filingAmount("不動産収入", package.property.revenue.yen)
+              filingAmount("不動産所得", package.property.incomeBeforeDeduction.yen, emphasized: true)
+            } else {
+              Text("決算結果を生成すると帳票を確認できます。")
+                .foregroundStyle(.secondary)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+
+          VStack(alignment: .leading, spacing: 12) {
+            Label("年度ルール", systemImage: "calendar.badge.checkmark")
+              .font(.headline)
+            if let rules = model.currentFormRuleSet {
+              HStack {
+                Text("手続")
+                Spacer()
+                Text("\(rules.procedureID) v\(rules.procedureVersion)")
+              }
+              ForEach(rules.forms) { form in
+                HStack {
+                  Text(form.name).lineLimit(1)
+                  Spacer()
+                  Text("\(form.id) v\(form.version)")
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
+              }
+              Text("根拠確認日とURLはバージョン情報へ保存されています。")
+                .font(.caption).foregroundStyle(.secondary)
+            } else {
+              Text("この年度のルールは未対応です。")
+                .foregroundStyle(.orange)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+
+        Divider()
+
+        VStack(alignment: .leading, spacing: 10) {
+          Text("出力前チェック").font(.headline)
+          if model.eTaxValidationIssues.isEmpty {
+            Label("必須項目・型・桁数・帳票間整合を確認しました", systemImage: "checkmark.circle.fill")
+              .foregroundStyle(.green)
+          } else {
+            ForEach(model.eTaxValidationIssues) { issue in
+              HStack(alignment: .top, spacing: 10) {
+                Image(
+                  systemName: issue.severity == .error
+                    ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(issue.severity == .error ? .red : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(issue.message)
+                  if let tag = issue.fieldTag {
+                    Text(tag).font(.caption.monospaced()).foregroundStyle(.secondary)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        if let checklist = model.eTaxReturnData?.checklist {
+          Divider()
+          VStack(alignment: .leading, spacing: 10) {
+            Text("出力内容とe-Tax追加入力").font(.headline)
+            ForEach(checklist) { item in
+              HStack(alignment: .top, spacing: 10) {
+                Image(
+                  systemName: item.state == .included
+                    ? "checkmark.circle.fill" : "arrow.right.circle.fill"
+                )
+                .foregroundStyle(item.state == .included ? .green : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(item.title).font(.subheadline.weight(.semibold))
+                  Text(item.detail).font(.caption).foregroundStyle(.secondary)
+                }
+              }
+            }
+          }
+        }
+
+        Divider()
+
+        HStack(spacing: 12) {
+          Button(".xtxを書き出す", systemImage: "square.and.arrow.up") {
+            guard let package = model.generateETaxPackage() else { return }
+            pendingExport = package
+            exportDocument = FilingXTXDocument(data: package.data)
+            exportFileName = package.fileName
+            isExporting = true
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(model.eTaxValidationIssues.contains { $0.severity == .error })
+          Button("受付通知・申告控えを添付", systemImage: "paperclip") {
+            isImportingReceipt = true
+          }
+          .buttonStyle(.bordered)
+          Spacer()
+          Text("署名・送信はe-Tax WEB版で行います")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+
+        if !model.eTaxExports.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("出力履歴").font(.headline)
+            ForEach(model.eTaxExports) { record in
+              HStack {
+                Text(record.exportedAt.formatted(date: .numeric, time: .shortened))
+                Text(record.fileName)
+                Spacer()
+                Text(String(record.fileHash.prefix(12)))
+                  .font(.caption.monospaced()).foregroundStyle(.secondary)
+              }
+              .padding(.vertical, 3)
+            }
+          }
+        }
+      }
+      .padding(24)
     }
   }
 
@@ -585,6 +804,23 @@ private struct FilingEntrySheet: View {
 
 private func yenFiling(_ value: Int64) -> String {
   "¥" + value.formatted(.number.grouping(.automatic))
+}
+
+private struct FilingXTXDocument: FileDocument {
+  static var readableContentTypes: [UTType] { [UTType(filenameExtension: "xtx") ?? .xml] }
+  let data: Data
+
+  init(data: Data) {
+    self.data = data
+  }
+
+  init(configuration: ReadConfiguration) throws {
+    data = configuration.file.regularFileContents ?? Data()
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
+  }
 }
 
 extension FilingReviewState {
