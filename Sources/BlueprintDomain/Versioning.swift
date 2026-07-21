@@ -1,7 +1,7 @@
 public enum BlueprintVersions {
-  public static let app = "0.1.0"
-  public static let databaseSchema = 2
-  public static let dataFormat = 1
+  public static let app = "0.2.0"
+  public static let databaseSchema = 3
+  public static let dataFormat = 2
   public static let taxRuleSet = "2026.1-draft"
   public static let formRuleSet = "2026.1-draft"
   public static let captureProtocol = 1

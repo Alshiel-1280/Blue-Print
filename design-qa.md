@@ -31,4 +31,16 @@ P0、P1、P2の未解決事項はない。
 
 ネイティブmacOSアプリのためブラウザコンソールは対象外。起動、主要操作、再起動でアプリ内エラー表示およびクラッシュは発生しなかった。
 
+## v0.2 会計コア追加画面
+
+- Design-system source: `docs/design/option-2-unified-direction.png`
+- Transaction input: `artifacts/v0.2/design-qa/transaction-input.png`
+- Journal and reversal state: `artifacts/v0.2/design-qa/journal-reversed.png`
+- Trial balance: `artifacts/v0.2/design-qa/trial-balance.png`
+- Viewport: 1400 × 768、2026年度、アクティブウインドウ
+
+v0.1で合格した案2のサイドバー、30pt見出し、白背景、高密度テーブル、青い主操作、緑／橙の状態表現を再利用した。取引入力は行指向の貸借ワークベンチ、仕訳帳・元帳・試算表は同じ列密度と操作位置へ統一した。生成済みの統合方向画像は月次ワークフロー状態のため画面内容のピクセル比較には使わず、共通シェル、文字階層、色、密度、状態表現を対象に比較した。
+
+GUI確認で、空入力時の記帳無効、差額表示、取消理由の必須化、反対仕訳の追加、元仕訳の「取消済み」表示、試算表の貸借一致を確認した。P0、P1、P2の未解決事項はない。
+
 final result: passed

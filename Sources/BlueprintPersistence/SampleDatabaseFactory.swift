@@ -7,14 +7,26 @@ public enum SampleDatabaseFactory {
     profileName: String = "移行テスト事業者",
     date: Date = Date(timeIntervalSince1970: 1_700_000_000)
   ) throws {
+    try makeVersion2Database(at: databaseURL, profileName: profileName, date: date)
+    let connection = try SQLiteConnection(databaseURL: databaseURL)
+    try connection.execute("DROP TABLE capture_sources")
+    try connection.execute("DELETE FROM version_metadata WHERE key = 'capture_protocol_version'")
+    try connection.execute("PRAGMA user_version = 1")
+  }
+
+  public static func makeVersion2Database(
+    at databaseURL: URL,
+    profileName: String = "移行テスト事業者",
+    date: Date = Date(timeIntervalSince1970: 1_700_000_000)
+  ) throws {
     let connection = try SQLiteConnection(databaseURL: databaseURL)
     try DatabaseMigrator().migrate(
       connection: connection,
       backupHook: NoopMigrationBackupHook()
     )
-    try connection.execute("DROP TABLE capture_sources")
-    try connection.execute("DELETE FROM version_metadata WHERE key = 'capture_protocol_version'")
-    try connection.execute("PRAGMA user_version = 1")
+    try connection.execute("DROP TABLE journal_lines")
+    try connection.execute("DROP TABLE journal_entries")
+    try connection.execute("PRAGMA user_version = 2")
 
     let fiscalYear = try FiscalYear(
       metadata: EntityMetadata(createdAt: date),

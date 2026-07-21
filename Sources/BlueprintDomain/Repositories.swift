@@ -28,3 +28,11 @@ public protocol AccountRepository: Sendable {
   func deactivate(id: EntityID, at date: Date) throws
   func delete(id: EntityID) throws
 }
+
+public protocol JournalRepository: Sendable {
+  func saveDraft(_ entry: JournalEntry) throws
+  func post(id: EntityID, fiscalYear: FiscalYear, at date: Date) throws
+  func fetch(id: EntityID) throws -> JournalEntry?
+  func search(_ query: JournalSearch) throws -> [JournalEntry]
+  func delete(id: EntityID) throws
+}

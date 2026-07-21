@@ -70,6 +70,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion1(connection)
     case 2:
       try applyVersion2(connection)
+    case 3:
+      try applyVersion3(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -221,6 +223,85 @@ public struct DatabaseMigrator: Sendable {
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?)",
       bindings: [
         .text("capture_protocol_version"), .text(String(BlueprintVersions.captureProtocol)),
+      ]
+    )
+  }
+
+  private func applyVersion3(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE journal_entries (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          transaction_date REAL NOT NULL,
+          description TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('draft','pendingReview','posted','reversed','corrected')),
+          source_entry_id TEXT REFERENCES journal_entries(id),
+          reason TEXT,
+          posted_at REAL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE journal_lines (
+          id TEXT PRIMARY KEY NOT NULL,
+          entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+          account_id TEXT NOT NULL REFERENCES accounts(id),
+          sub_account_id TEXT REFERENCES sub_accounts(id),
+          side TEXT NOT NULL CHECK (side IN ('debit','credit')),
+          amount_yen INTEGER NOT NULL CHECK (amount_yen > 0),
+          tax_rate TEXT NOT NULL,
+          counterparty TEXT NOT NULL DEFAULT '',
+          memo TEXT NOT NULL DEFAULT '',
+          line_order INTEGER NOT NULL,
+          UNIQUE(entry_id, line_order)
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE INDEX journal_entries_fiscal_date_index
+      ON journal_entries(fiscal_year_id, transaction_date, created_at)
+      """)
+    try connection.execute(
+      """
+      CREATE INDEX journal_lines_account_index
+      ON journal_lines(account_id, entry_id)
+      """)
+    try connection.execute(
+      """
+      CREATE TRIGGER posted_journal_no_delete
+      BEFORE DELETE ON journal_entries
+      WHEN OLD.status IN ('posted','reversed','corrected')
+      BEGIN
+          SELECT RAISE(ABORT, 'posted journal entries cannot be deleted');
+      END
+      """)
+    try connection.execute(
+      """
+      CREATE TRIGGER posted_journal_lines_no_update
+      BEFORE UPDATE ON journal_lines
+      WHEN (SELECT status FROM journal_entries WHERE id = OLD.entry_id) IN ('posted','reversed','corrected')
+      BEGIN
+          SELECT RAISE(ABORT, 'posted journal lines cannot be updated');
+      END
+      """)
+    try connection.execute(
+      """
+      CREATE TRIGGER posted_journal_lines_no_delete
+      BEFORE DELETE ON journal_lines
+      WHEN (SELECT status FROM journal_entries WHERE id = OLD.entry_id) IN ('posted','reversed','corrected')
+      BEGIN
+          SELECT RAISE(ABORT, 'posted journal lines cannot be deleted');
+      END
+      """)
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
       ]
     )
   }

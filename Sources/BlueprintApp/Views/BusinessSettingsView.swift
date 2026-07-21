@@ -4,6 +4,8 @@ import SwiftUI
 struct BusinessSettingsView: View {
   @ObservedObject var model: AppModel
   @State private var draft: BusinessProfile?
+  @State private var showingLockConfirmation = false
+  @State private var reopenReason = ""
 
   var body: some View {
     ScrollView {
@@ -17,6 +19,21 @@ struct BusinessSettingsView: View {
 
         if let draftBinding = Binding($draft) {
           Form {
+            Section("年度制御") {
+              LabeledContent("状態", value: model.fiscalYear?.status.localizedName ?? "未設定")
+              if model.fiscalYear?.status == .locked {
+                TextField("再オープン理由", text: $reopenReason)
+                Button("理由を記録して再オープン") {
+                  model.reopenFiscalYear(reason: reopenReason)
+                  if model.errorMessage == nil { reopenReason = "" }
+                }
+                .disabled(reopenReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              } else {
+                Button("年度をロック", role: .destructive) {
+                  showingLockConfirmation = true
+                }
+              }
+            }
             Section("事業者") {
               TextField("氏名", text: draftBinding.ownerName)
               TextField("屋号", text: draftBinding.tradeName)
@@ -77,5 +94,25 @@ struct BusinessSettingsView: View {
     }
     .onAppear { draft = model.profile }
     .onChange(of: model.profile) { _, newValue in draft = newValue }
+    .confirmationDialog(
+      "年度をロックしますか？",
+      isPresented: $showingLockConfirmation
+    ) {
+      Button("年度をロック", role: .destructive) { model.lockFiscalYear() }
+      Button("キャンセル", role: .cancel) {}
+    } message: {
+      Text("ロック後は仕訳、インポート、年度設定の変更を拒否します。再オープンには理由が必要です。")
+    }
+  }
+}
+
+extension FiscalYearStatus {
+  fileprivate var localizedName: String {
+    switch self {
+    case .open: "入力受付中"
+    case .closing: "決算整理中"
+    case .filed: "申告済み"
+    case .locked: "ロック済み"
+    }
   }
 }

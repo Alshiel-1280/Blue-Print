@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var profile: BusinessProfile?
   @Published private(set) var fiscalYear: FiscalYear?
   @Published private(set) var accounts: [Account] = []
+  @Published private(set) var journalEntries: [JournalEntry] = []
   @Published private(set) var auditEvents: [AuditEvent] = []
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
@@ -119,6 +120,95 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func createAndPostJournal(
+    transactionDate: Date,
+    description: String,
+    lines: [JournalLine]
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let now = clock.now()
+      let entry = JournalEntry(
+        metadata: EntityMetadata(createdAt: now),
+        fiscalYearID: fiscalYear.id,
+        transactionDate: transactionDate,
+        description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+        lines: lines
+      )
+      try database.saveJournalDraft(entry, at: now)
+      try database.postJournal(id: entry.id, fiscalYearID: fiscalYear.id, at: now)
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func reverseJournal(_ entry: JournalEntry, reason: String) {
+    guard let database else { return }
+    do {
+      try database.reverseJournal(id: entry.id, reason: reason, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func correctJournal(
+    _ entry: JournalEntry,
+    transactionDate: Date,
+    description: String,
+    lines: [JournalLine],
+    reason: String
+  ) {
+    guard let database else { return }
+    do {
+      try database.correctJournal(
+        id: entry.id,
+        transactionDate: transactionDate,
+        description: description,
+        lines: lines,
+        reason: reason,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func lockFiscalYear() {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.lockFiscalYear(id: fiscalYear.id, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func reopenFiscalYear(reason: String) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.reopenFiscalYear(id: fiscalYear.id, reason: reason, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func ledger(accountID: EntityID) -> [LedgerItem] {
+    (try? AccountingReports.ledger(accountID: accountID, entries: journalEntries)) ?? []
+  }
+
+  var trialBalance: TrialBalance? {
+    try? AccountingReports.trialBalance(entries: journalEntries)
+  }
+
   func dismissError() {
     errorMessage = nil
   }
@@ -128,6 +218,11 @@ final class AppModel: ObservableObject {
     profile = try database.profiles.fetchAll().first
     fiscalYear = try database.fiscalYears.fetchAll().first
     accounts = try database.accounts.fetchAll(includeInactive: true)
+    if let fiscalYear {
+      journalEntries = try database.journals.search(JournalSearch(fiscalYearID: fiscalYear.id))
+    } else {
+      journalEntries = []
+    }
     auditEvents = try database.auditEvents.fetchAll()
   }
 
@@ -139,6 +234,18 @@ final class AppModel: ObservableObject {
       "同じデータが既にあります。内容を確認して重複を解消してください。"
     case FiscalYearError.unsupportedCalendarYear:
       "対応範囲外の年度です。2000年から2100年の範囲で入力してください。"
+    case JournalError.debitsAndCreditsDoNotMatch(let debits, let credits):
+      "借方 \(debits)円と貸方 \(credits)円が一致していません。差額を修正してください。"
+    case JournalError.requiresAtLeastTwoLines:
+      "仕訳には借方・貸方を含む2行以上が必要です。行を追加してください。"
+    case JournalError.amountMustBePositive:
+      "金額は1円以上で入力してください。"
+    case JournalError.dateOutsideFiscalYear:
+      "取引日が申告年度の範囲外です。年度内の日付へ修正してください。"
+    case JournalError.missingReason:
+      "取消・訂正の理由を入力してください。"
+    case RepositoryError.fiscalYearLocked:
+      "この年度はロックされています。理由を記録して再オープンしてから操作してください。"
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }

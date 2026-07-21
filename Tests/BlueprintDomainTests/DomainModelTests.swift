@@ -86,4 +86,130 @@ final class DomainModelTests: XCTestCase {
     XCTAssertEqual(account.id, id)
     XCTAssertEqual(account.metadata.updatedAt, deactivatedAt)
   }
+
+  func testBalancedJournalPostsAndBuildsConsistentReports() throws {
+    let now = Date(timeIntervalSince1970: 1_767_225_600)
+    let year = try FiscalYear(
+      metadata: EntityMetadata(createdAt: now),
+      calendarYear: 2026,
+      taxRuleSetID: "rules",
+      formRuleSetID: "forms"
+    )
+    let accounts = StandardChartOfAccounts.accounts(createdAt: now)
+    var entry = JournalEntry(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: year.id,
+      transactionDate: now,
+      description: "売上入金",
+      lines: [
+        try JournalLine(
+          accountID: accounts[0].id,
+          side: .debit,
+          amount: Money(yen: 50_000)
+        ),
+        try JournalLine(
+          accountID: accounts[8].id,
+          side: .credit,
+          amount: Money(yen: 50_000)
+        ),
+      ]
+    )
+
+    try entry.post(for: year, at: now)
+    XCTAssertEqual(entry.status, .posted)
+    let trial = try AccountingReports.trialBalance(entries: [entry])
+    XCTAssertTrue(trial.isBalanced)
+    XCTAssertEqual(trial.totalDebits, Money(yen: 50_000))
+    let cashLedger = try AccountingReports.ledger(accountID: accounts[0].id, entries: [entry])
+    XCTAssertEqual(cashLedger.last?.runningBalance, Money(yen: 50_000))
+  }
+
+  func testUnbalancedJournalCannotPost() throws {
+    let now = Date(timeIntervalSince1970: 1_767_225_600)
+    let year = try FiscalYear(
+      metadata: EntityMetadata(createdAt: now),
+      calendarYear: 2026,
+      taxRuleSetID: "rules",
+      formRuleSetID: "forms"
+    )
+    let accounts = StandardChartOfAccounts.accounts(createdAt: now)
+    var entry = JournalEntry(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: year.id,
+      transactionDate: now,
+      description: "不一致",
+      lines: [
+        try JournalLine(accountID: accounts[0].id, side: .debit, amount: Money(yen: 1_000)),
+        try JournalLine(accountID: accounts[8].id, side: .credit, amount: Money(yen: 999)),
+      ]
+    )
+
+    XCTAssertThrowsError(try entry.post(for: year, at: now)) { error in
+      XCTAssertEqual(
+        error as? JournalError,
+        .debitsAndCreditsDoNotMatch(debits: 1_000, credits: 999)
+      )
+    }
+    XCTAssertEqual(entry.status, .draft)
+  }
+
+  func testReversalOffsetsOriginalWithoutLosingTraceability() throws {
+    let now = Date(timeIntervalSince1970: 1_767_225_600)
+    let year = try FiscalYear(
+      metadata: EntityMetadata(createdAt: now),
+      calendarYear: 2026,
+      taxRuleSetID: "rules",
+      formRuleSetID: "forms"
+    )
+    let accounts = StandardChartOfAccounts.accounts(createdAt: now)
+    var original = JournalEntry(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: year.id,
+      transactionDate: now,
+      description: "消耗品",
+      lines: [
+        try JournalLine(accountID: accounts[11].id, side: .debit, amount: Money(yen: 3_000)),
+        try JournalLine(accountID: accounts[0].id, side: .credit, amount: Money(yen: 3_000)),
+      ]
+    )
+    try original.post(for: year, at: now)
+    var reversal = try original.makeReversal(at: now.addingTimeInterval(1), reason: "重複")
+    try reversal.post(for: year, at: now.addingTimeInterval(1))
+
+    XCTAssertEqual(reversal.sourceEntryID, original.id)
+    let trial = try AccountingReports.trialBalance(entries: [original, reversal])
+    XCTAssertTrue(trial.accounts.allSatisfy { $0.net == .zero })
+  }
+
+  func testOpeningAndOwnerEquityClosingEntriesBalance() throws {
+    let now = Date(timeIntervalSince1970: 1_767_225_600)
+    let accounts = StandardChartOfAccounts.accounts(createdAt: now)
+    let fiscalYearID = UUID()
+    let opening = try JournalEntry.openingBalance(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: fiscalYearID,
+      transactionDate: now,
+      balances: [
+        (accounts[0].id, Money(yen: 100_000)),
+        (accounts[3].id, Money(yen: -20_000)),
+      ],
+      capitalAccountID: accounts[5].id
+    )
+    XCTAssertEqual(opening.kind, .opening)
+    XCTAssertEqual(try opening.totals().debits, Money(yen: 100_000))
+    XCTAssertEqual(try opening.totals().credits, Money(yen: 100_000))
+
+    let closing = try JournalEntry.ownerEquityClosing(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: fiscalYearID,
+      transactionDate: now,
+      ownerDrawingsAccountID: accounts[6].id,
+      ownerDrawings: Money(yen: 30_000),
+      ownerContributionsAccountID: accounts[7].id,
+      ownerContributions: Money(yen: 10_000),
+      capitalAccountID: accounts[5].id
+    )
+    XCTAssertEqual(closing.kind, .closing)
+    XCTAssertEqual(try closing.totals().debits, try closing.totals().credits)
+  }
 }

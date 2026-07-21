@@ -1,6 +1,10 @@
 import SwiftUI
 
 enum AppDestination: String, CaseIterable, Identifiable {
+  case transactionInput
+  case journal
+  case ledger
+  case trialBalance
   case accounts
   case businessSettings
   case versions
@@ -10,6 +14,10 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
+    case .transactionInput: "取引入力"
+    case .journal: "仕訳帳"
+    case .ledger: "総勘定元帳"
+    case .trialBalance: "試算表"
     case .accounts: "勘定科目"
     case .businessSettings: "事業者設定"
     case .versions: "バージョン"
@@ -19,6 +27,10 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
+    case .transactionInput: "square.and.pencil"
+    case .journal: "book.closed"
+    case .ledger: "books.vertical"
+    case .trialBalance: "tablecells"
     case .accounts: "cylinder.split.1x2"
     case .businessSettings: "gearshape"
     case .versions: "info.circle"
@@ -29,7 +41,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
 struct MainShellView: View {
   @ObservedObject var model: AppModel
-  @State private var destination: AppDestination? = .accounts
+  @State private var destination: AppDestination? = .transactionInput
 
   var body: some View {
     NavigationSplitView {
@@ -47,6 +59,23 @@ struct MainShellView: View {
         .padding(.vertical, 12)
 
         List(selection: $destination) {
+          Section("メイン") {
+            NavigationLink(value: AppDestination.transactionInput) {
+              Label(
+                AppDestination.transactionInput.title,
+                systemImage: AppDestination.transactionInput.icon)
+            }
+            NavigationLink(value: AppDestination.journal) {
+              Label(AppDestination.journal.title, systemImage: AppDestination.journal.icon)
+            }
+            NavigationLink(value: AppDestination.ledger) {
+              Label(AppDestination.ledger.title, systemImage: AppDestination.ledger.icon)
+            }
+            NavigationLink(value: AppDestination.trialBalance) {
+              Label(
+                AppDestination.trialBalance.title, systemImage: AppDestination.trialBalance.icon)
+            }
+          }
           Section("マスター") {
             NavigationLink(value: AppDestination.accounts) {
               Label(AppDestination.accounts.title, systemImage: AppDestination.accounts.icon)
@@ -85,7 +114,15 @@ struct MainShellView: View {
       }
       .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 280)
     } detail: {
-      switch destination ?? .accounts {
+      switch destination ?? .transactionInput {
+      case .transactionInput:
+        JournalEntryView(model: model)
+      case .journal:
+        JournalListView(model: model)
+      case .ledger:
+        GeneralLedgerView(model: model)
+      case .trialBalance:
+        TrialBalanceView(model: model)
       case .accounts:
         AccountsView(model: model)
       case .businessSettings:
