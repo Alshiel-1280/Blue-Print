@@ -1,0 +1,227 @@
+import BlueprintDomain
+import Foundation
+
+public protocol MigrationBackupHook: Sendable {
+  func prepareForMigration(databaseURL: URL, fromVersion: Int, toVersion: Int) throws
+}
+
+public struct NoopMigrationBackupHook: MigrationBackupHook {
+  public init() {}
+  public func prepareForMigration(databaseURL: URL, fromVersion: Int, toVersion: Int) throws {}
+}
+
+public struct FileMigrationBackupHook: MigrationBackupHook {
+  public let backupDirectory: URL
+
+  public init(backupDirectory: URL) {
+    self.backupDirectory = backupDirectory
+  }
+
+  public func prepareForMigration(databaseURL: URL, fromVersion: Int, toVersion: Int) throws {
+    guard FileManager.default.fileExists(atPath: databaseURL.path) else { return }
+    try FileManager.default.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+    let formatter = ISO8601DateFormatter()
+    let timestamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+    let destination = backupDirectory.appendingPathComponent(
+      "blueprint.pre-migration-v\(fromVersion)-to-v\(toVersion).\(timestamp).sqlite"
+    )
+    try FileManager.default.copyItem(at: databaseURL, to: destination)
+  }
+}
+
+public struct DatabaseMigrator: Sendable {
+  public static let latestVersion = BlueprintVersions.databaseSchema
+
+  public init() {}
+
+  public func migrate(
+    connection: SQLiteConnection,
+    backupHook: any MigrationBackupHook
+  ) throws {
+    let currentVersion = Int(try connection.scalarInt("PRAGMA user_version") ?? 0)
+    guard currentVersion <= Self.latestVersion else {
+      throw SQLiteFailure(
+        code: 1,
+        message: "DB schema \(currentVersion) is newer than supported schema \(Self.latestVersion)"
+      )
+    }
+    guard currentVersion < Self.latestVersion else { return }
+
+    if currentVersion > 0 {
+      try connection.checkpoint()
+      try backupHook.prepareForMigration(
+        databaseURL: connection.databaseURL,
+        fromVersion: currentVersion,
+        toVersion: Self.latestVersion
+      )
+    }
+
+    try connection.transaction {
+      for version in (currentVersion + 1)...Self.latestVersion {
+        try apply(version: version, connection: connection)
+        try connection.execute("PRAGMA user_version = \(version)")
+      }
+    }
+  }
+
+  private func apply(version: Int, connection: SQLiteConnection) throws {
+    switch version {
+    case 1:
+      try applyVersion1(connection)
+    case 2:
+      try applyVersion2(connection)
+    default:
+      preconditionFailure("Missing migration \(version)")
+    }
+  }
+
+  private func applyVersion1(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE version_metadata (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE fiscal_years (
+          id TEXT PRIMARY KEY NOT NULL,
+          calendar_year INTEGER NOT NULL UNIQUE,
+          status TEXT NOT NULL CHECK (status IN ('open','closing','filed','locked')),
+          tax_rule_set_id TEXT NOT NULL,
+          form_rule_set_id TEXT NOT NULL,
+          locked_at REAL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE business_profiles (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          owner_name TEXT NOT NULL,
+          trade_name TEXT NOT NULL,
+          postal_address TEXT NOT NULL DEFAULT '',
+          tax_address TEXT NOT NULL DEFAULT '',
+          tax_office TEXT NOT NULL DEFAULT '',
+          industry TEXT NOT NULL DEFAULT '',
+          opened_on REAL,
+          blue_return_approved INTEGER NOT NULL CHECK (blue_return_approved IN (0,1)),
+          bookkeeping_style TEXT NOT NULL,
+          consumption_tax_status TEXT NOT NULL,
+          invoice_registration_status TEXT NOT NULL,
+          invoice_registration_number TEXT,
+          invoice_registered_on REAL,
+          invoice_cancelled_on REAL,
+          tax_accounting_method TEXT NOT NULL,
+          rounding_rule TEXT NOT NULL,
+          default_tax_rate TEXT NOT NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL,
+          UNIQUE(fiscal_year_id)
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE accounts (
+          id TEXT PRIMARY KEY NOT NULL,
+          code TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          category TEXT NOT NULL,
+          normal_balance TEXT NOT NULL,
+          default_tax_rate TEXT NOT NULL,
+          statement_section TEXT NOT NULL,
+          display_order INTEGER NOT NULL,
+          is_active INTEGER NOT NULL CHECK (is_active IN (0,1)),
+          is_system INTEGER NOT NULL CHECK (is_system IN (0,1)),
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE sub_accounts (
+          id TEXT PRIMARY KEY NOT NULL,
+          account_id TEXT NOT NULL REFERENCES accounts(id),
+          code TEXT NOT NULL,
+          name TEXT NOT NULL,
+          display_order INTEGER NOT NULL,
+          is_active INTEGER NOT NULL CHECK (is_active IN (0,1)),
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL,
+          UNIQUE(account_id, code)
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE audit_events (
+          id TEXT PRIMARY KEY NOT NULL,
+          occurred_at REAL NOT NULL,
+          actor_kind TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_type TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          reason TEXT,
+          related_event_id TEXT REFERENCES audit_events(id)
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE INDEX audit_events_target_index
+      ON audit_events(target_type, target_id, occurred_at)
+      """)
+    try connection.execute(
+      """
+      CREATE TRIGGER audit_events_no_update
+      BEFORE UPDATE ON audit_events
+      BEGIN
+          SELECT RAISE(ABORT, 'audit events are append-only');
+      END
+      """)
+    try connection.execute(
+      """
+      CREATE TRIGGER audit_events_no_delete
+      BEFORE DELETE ON audit_events
+      BEGIN
+          SELECT RAISE(ABORT, 'audit events are append-only');
+      END
+      """)
+    try connection.execute(
+      "INSERT INTO version_metadata(key, value) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("tax_rule_set_version"), .text(BlueprintVersions.taxRuleSet),
+        .text("form_rule_set_version"), .text(BlueprintVersions.formRuleSet),
+      ]
+    )
+  }
+
+  private func applyVersion2(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE capture_sources (
+          id TEXT PRIMARY KEY NOT NULL,
+          document_id TEXT NOT NULL,
+          original_sha256 TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          device_kind TEXT NOT NULL,
+          captured_at REAL NOT NULL,
+          mime_type TEXT NOT NULL,
+          byte_count INTEGER NOT NULL CHECK (byte_count >= 0),
+          transfer_state TEXT NOT NULL,
+          protocol_version INTEGER NOT NULL,
+          canonical_authority TEXT NOT NULL CHECK (canonical_authority = 'mac'),
+          UNIQUE(document_id, original_sha256)
+      ) STRICT
+      """)
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?)",
+      bindings: [
+        .text("capture_protocol_version"), .text(String(BlueprintVersions.captureProtocol)),
+      ]
+    )
+  }
+}

@@ -1,0 +1,28 @@
+name: 不具合報告
+description: クラッシュ、表示、計算、データ整合性の問題を報告します
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        実在する氏名、住所、マイナンバー、口座番号、証憑、バックアップ、パスフレーズを添付しないでください。
+  - type: input
+    id: version
+    attributes:
+      label: アプリ版・DBスキーマ版
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 匿名化した再現手順
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影響
+      description: データ破損、二重計上、税額・申告出力への影響があれば記載してください。
+    validations:
+      required: true
