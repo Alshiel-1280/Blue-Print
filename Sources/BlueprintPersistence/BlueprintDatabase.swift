@@ -1,5 +1,6 @@
 import BlueprintAudit
 import BlueprintBilling
+import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
 import BlueprintImports
@@ -14,6 +15,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
   public let evidence: SQLiteEvidenceRepository
   public let imports: SQLiteImportRepository
   public let billing: SQLiteBillingRepository
+  public let closing: SQLiteClosingRepository
   public let evidenceFileStore: EvidenceFileStore
   public let auditEvents: SQLiteAuditEventRepository
 
@@ -32,6 +34,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
     evidence = SQLiteEvidenceRepository(connection: connection)
     imports = SQLiteImportRepository(connection: connection)
     billing = SQLiteBillingRepository(connection: connection)
+    closing = SQLiteClosingRepository(connection: connection)
     let root = databaseURL.deletingLastPathComponent().deletingLastPathComponent()
     evidenceFileStore = EvidenceFileStore(
       originalsDirectory: root.appendingPathComponent("Evidence/Originals", isDirectory: true),
@@ -1203,6 +1206,172 @@ public final class BlueprintDatabase: @unchecked Sendable {
     return bill
   }
 
+  public func saveFixedAsset(_ asset: FixedAsset, at date: Date) throws {
+    try connection.transaction {
+      guard try fiscalYears.fetch(id: asset.fiscalYearID)?.status != .locked else {
+        throw RepositoryError.fiscalYearLocked
+      }
+      let exists = try closing.asset(id: asset.id) != nil
+      try closing.saveAsset(asset)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: exists ? .updated : .created,
+          targetType: "FixedAsset",
+          targetID: asset.id.uuidString.lowercased()
+        ))
+    }
+  }
+
+  @discardableResult
+  public func postDepreciation(assetID: EntityID, calendarYear: Int, at date: Date) throws
+    -> JournalEntry
+  {
+    guard let asset = try closing.asset(id: assetID),
+      let fiscalYear = try fiscalYears.fetch(id: asset.fiscalYearID)
+    else { throw RepositoryError.notFound }
+    guard fiscalYear.status != .locked else { throw RepositoryError.fiscalYearLocked }
+    let description = "減価償却 \(asset.code) \(asset.name)"
+    if let existing = try journals.search(
+      JournalSearch(fiscalYearID: fiscalYear.id, text: description)
+    ).first(where: { $0.kind == .closing && $0.description == description }) {
+      return existing
+    }
+    let entry = try asset.depreciationJournal(
+      for: calendarYear,
+      fiscalYear: fiscalYear,
+      at: date
+    )
+    try connection.transaction {
+      try journals.persist(entry)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .created,
+          targetType: "FixedAssetDepreciation",
+          targetID: asset.id.uuidString.lowercased(),
+          reason: "year:\(calendarYear)"
+        ))
+    }
+    return entry
+  }
+
+  public func saveHouseholdRule(_ rule: HouseholdAllocationRule, at date: Date) throws {
+    try connection.transaction {
+      try closing.saveHouseholdRule(rule)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "HouseholdAllocationRule",
+          targetID: rule.id.uuidString.lowercased()
+        ))
+    }
+  }
+
+  @discardableResult
+  public func postHouseholdAllocation(ruleID: EntityID, at date: Date) throws -> JournalEntry? {
+    guard let fiscalYear = try fiscalYears.fetchAll().first,
+      let rule = try closing.householdRules().first(where: { $0.id == ruleID })
+    else { throw RepositoryError.notFound }
+    guard fiscalYear.status != .locked else { throw RepositoryError.fiscalYearLocked }
+    let entries = try journals.search(JournalSearch(fiscalYearID: fiscalYear.id))
+    let ledger = try AccountingReports.ledger(accountID: rule.expenseAccountID, entries: entries)
+    let expenseBalance = ledger.last?.runningBalance ?? .zero
+    let calendar = Calendar(identifier: .gregorian)
+    let transactionDate = try calendar.date(
+      from: DateComponents(year: fiscalYear.calendarYear, month: 12, day: 31)
+    ).unwrapClosingDate()
+    guard
+      let entry = try rule.adjustmentEntry(
+        fiscalYear: fiscalYear,
+        expenseBalance: expenseBalance,
+        transactionDate: transactionDate,
+        at: date
+      )
+    else { return nil }
+    try connection.transaction {
+      try journals.persist(entry)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .created,
+          targetType: "HouseholdAllocation",
+          targetID: rule.id.uuidString.lowercased()
+        ))
+    }
+    return entry
+  }
+
+  public func saveInventoryClosing(_ inventory: InventoryClosing, at date: Date) throws {
+    guard let fiscalYear = try fiscalYears.fetchAll().first else {
+      throw RepositoryError.notFound
+    }
+    guard fiscalYear.status != .locked else { throw RepositoryError.fiscalYearLocked }
+    try connection.transaction {
+      try closing.saveInventory(inventory, fiscalYearID: fiscalYear.id)
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "InventoryClosing",
+          targetID: fiscalYear.id.uuidString.lowercased()
+        ))
+    }
+  }
+
+  public func closingChecklist(asOf date: Date) throws -> ClosingChecklist {
+    guard let fiscalYear = try fiscalYears.fetchAll().first else {
+      throw RepositoryError.notFound
+    }
+    let evidenceCount = try evidence.search(EvidenceSearch(states: [.needsReview])).count
+    let importedCount = try imports.transactions(states: [.needsReview]).count
+    let draftCount = try journals.search(
+      JournalSearch(fiscalYearID: fiscalYear.id, statuses: [.draft, .pendingReview])
+    ).count
+    let overdueInvoices = try billing.invoices(
+      BillingSearch(fiscalYearID: fiscalYear.id, overdueAsOf: date)
+    ).count
+    let overdueBills = try billing.vendorBills(
+      BillingSearch(fiscalYearID: fiscalYear.id, overdueAsOf: date)
+    ).count
+    return ClosingChecklist(items: [
+      ClosingCheckItem(
+        id: "evidence",
+        title: "証憑の確認",
+        detail: "未確認 \(evidenceCount + importedCount)件",
+        severity: .blocking,
+        isResolved: evidenceCount + importedCount == 0
+      ),
+      ClosingCheckItem(
+        id: "journals",
+        title: "未確定仕訳",
+        detail: "下書き・確認待ち \(draftCount)件",
+        severity: .blocking,
+        isResolved: draftCount == 0
+      ),
+      ClosingCheckItem(
+        id: "settlements",
+        title: "期限超過の債権・債務",
+        detail: "売掛 \(overdueInvoices)件・未払 \(overdueBills)件",
+        severity: .warning,
+        isResolved: overdueInvoices + overdueBills == 0
+      ),
+      ClosingCheckItem(
+        id: "inventory",
+        title: "期末棚卸",
+        detail: try closing.inventory(fiscalYearID: fiscalYear.id) == nil ? "未入力" : "入力済み",
+        severity: .warning,
+        isResolved: try closing.inventory(fiscalYearID: fiscalYear.id) != nil
+      ),
+    ])
+  }
+
   private func invoiceIssueLines(
     invoice: Invoice,
     accounts: InvoiceIssueAccounts,
@@ -1310,6 +1479,13 @@ public final class BlueprintDatabase: @unchecked Sendable {
     let hasProfile = try !profiles.fetchAll().isEmpty
     let hasFiscalYear = try !fiscalYears.fetchAll().isEmpty
     return hasProfile && hasFiscalYear
+  }
+}
+
+extension Optional where Wrapped == Date {
+  fileprivate func unwrapClosingDate() throws -> Date {
+    guard let self else { throw RepositoryError.invalidData("closing date") }
+    return self
   }
 }
 

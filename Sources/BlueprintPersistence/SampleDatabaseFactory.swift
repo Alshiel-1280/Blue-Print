@@ -57,11 +57,8 @@ public enum SampleDatabaseFactory {
     profileName: String = "移行テスト事業者",
     date: Date = Date(timeIntervalSince1970: 1_700_000_000)
   ) throws {
+    try makeVersion5Database(at: databaseURL, profileName: profileName, date: date)
     let connection = try SQLiteConnection(databaseURL: databaseURL)
-    try DatabaseMigrator().migrate(
-      connection: connection,
-      backupHook: NoopMigrationBackupHook()
-    )
     try connection.execute("DROP TABLE invoice_reissues")
     try connection.execute("DROP TABLE invoices")
     try connection.execute("DROP TABLE vendor_bills")
@@ -73,6 +70,29 @@ public enum SampleDatabaseFactory {
       "UPDATE version_metadata SET value = '3' WHERE key = 'data_format_version'"
     )
     try connection.execute("PRAGMA user_version = 4")
+  }
+
+  public static func makeVersion5Database(
+    at databaseURL: URL,
+    profileName: String = "移行テスト事業者",
+    date: Date = Date(timeIntervalSince1970: 1_700_000_000)
+  ) throws {
+    let connection = try SQLiteConnection(databaseURL: databaseURL)
+    try DatabaseMigrator().migrate(
+      connection: connection,
+      backupHook: NoopMigrationBackupHook()
+    )
+    try connection.execute("DROP TABLE closing_inventories")
+    try connection.execute("DROP TABLE accrual_templates")
+    try connection.execute("DROP TABLE household_allocation_rules")
+    try connection.execute("DROP TABLE fixed_assets")
+    try connection.execute(
+      "UPDATE version_metadata SET value = '0.4.0' WHERE key = 'app_version'"
+    )
+    try connection.execute(
+      "UPDATE version_metadata SET value = '4' WHERE key = 'data_format_version'"
+    )
+    try connection.execute("PRAGMA user_version = 5")
 
     let fiscalYear = try FiscalYear(
       metadata: EntityMetadata(createdAt: date),

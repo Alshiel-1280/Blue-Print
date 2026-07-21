@@ -54,7 +54,7 @@ final class PersistenceTests: XCTestCase {
 
     XCTAssertEqual(try first.profiles.fetchAll(), [setup.profile])
     XCTAssertEqual(try first.fiscalYears.fetchAll(), [setup.fiscalYear])
-    XCTAssertEqual(try first.accounts.fetchAll(includeInactive: true).count, 15)
+    XCTAssertEqual(try first.accounts.fetchAll(includeInactive: true).count, 25)
 
     let reopened = try BlueprintDatabase(databaseURL: databaseURL)
     XCTAssertEqual(try reopened.profiles.fetchAll(), [setup.profile])
@@ -67,8 +67,8 @@ final class PersistenceTests: XCTestCase {
     try database.accounts.seedStandardAccounts(createdAt: now)
     try database.accounts.seedStandardAccounts(createdAt: now.addingTimeInterval(1))
     let accounts = try database.accounts.fetchAll(includeInactive: true)
-    XCTAssertEqual(accounts.count, 15)
-    XCTAssertEqual(Set(accounts.map(\.code)).count, 15)
+    XCTAssertEqual(accounts.count, 25)
+    XCTAssertEqual(Set(accounts.map(\.code)).count, 25)
   }
 
   func testAccountCannotBePhysicallyDeletedAndDeactivationIsAudited() throws {
@@ -159,7 +159,7 @@ final class PersistenceTests: XCTestCase {
     let backups = try FileManager.default.contentsOfDirectory(
       at: backupDirectory, includingPropertiesForKeys: nil)
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v1-to-v5"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v1-to-v6"))
   }
 
   func testVersion2DatabaseMigratesToJournalSchemaWithoutDataLoss() throws {
@@ -183,7 +183,7 @@ final class PersistenceTests: XCTestCase {
     let backups = try FileManager.default.contentsOfDirectory(
       at: backupDirectory, includingPropertiesForKeys: nil)
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v2-to-v5"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v2-to-v6"))
   }
 
   func testJournalPostingRoundTripSearchAndPhysicalDeletionBoundary() throws {

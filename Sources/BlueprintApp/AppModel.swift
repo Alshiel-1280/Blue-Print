@@ -1,5 +1,6 @@
 import BlueprintAudit
 import BlueprintBilling
+import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
 import BlueprintImports
@@ -21,6 +22,8 @@ final class AppModel: ObservableObject {
   @Published private(set) var counterparties: [Counterparty] = []
   @Published private(set) var invoices: [Invoice] = []
   @Published private(set) var vendorBills: [VendorBill] = []
+  @Published private(set) var fixedAssets: [FixedAsset] = []
+  @Published private(set) var closingChecklist = ClosingChecklist(items: [])
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -613,6 +616,204 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func saveFixedAsset(
+    code: String,
+    name: String,
+    category: String,
+    acquisitionDate: Date,
+    serviceDate: Date,
+    cost: Int64,
+    usefulLifeYears: Int,
+    method: DepreciationMethod,
+    businessUseBasisPoints: Int,
+    assetAccountID: EntityID,
+    depreciationExpenseAccountID: EntityID,
+    accumulatedDepreciationAccountID: EntityID
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let asset = try FixedAsset(
+        metadata: EntityMetadata(createdAt: clock.now()),
+        fiscalYearID: fiscalYear.id,
+        code: code,
+        name: name,
+        category: category,
+        acquisitionDate: acquisitionDate,
+        serviceDate: serviceDate,
+        acquisitionCost: Money(yen: cost),
+        usefulLifeYears: usefulLifeYears,
+        method: method,
+        decliningRateBasisPoints: method == .decliningBalance ? 2_000 : 0,
+        businessUseBasisPoints: businessUseBasisPoints,
+        assetAccountID: assetAccountID,
+        depreciationExpenseAccountID: depreciationExpenseAccountID,
+        accumulatedDepreciationAccountID: accumulatedDepreciationAccountID
+      )
+      try database.saveFixedAsset(asset, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func postDepreciation(_ asset: FixedAsset) {
+    guard let database, let fiscalYear else { return }
+    do {
+      _ = try database.postDepreciation(
+        assetID: asset.id,
+        calendarYear: fiscalYear.calendarYear,
+        at: fiscalYearEnd
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveInventory(opening: Int64, purchases: Int64, closing: Int64) {
+    guard let database else { return }
+    do {
+      let inventory = try InventoryClosing(
+        openingInventory: Money(yen: opening),
+        purchases: Money(yen: purchases),
+        closingInventory: Money(yen: closing)
+      )
+      try database.saveInventoryClosing(inventory, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveHouseholdRule(
+    name: String,
+    expenseAccountID: EntityID,
+    ownerDrawingsAccountID: EntityID,
+    personalBasisPoints: Int,
+    rationale: String
+  ) {
+    guard let database else { return }
+    do {
+      let rule = try HouseholdAllocationRule(
+        name: name,
+        expenseAccountID: expenseAccountID,
+        ownerDrawingsAccountID: ownerDrawingsAccountID,
+        personalBasisPoints: personalBasisPoints,
+        rationale: rationale
+      )
+      try database.saveHouseholdRule(rule, at: clock.now())
+      _ = try database.postHouseholdAllocation(ruleID: rule.id, at: clock.now())
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func profitAndLoss(period: ClosedRange<Date>) -> ProfitAndLossReport? {
+    try? ClosingReports.profitAndLoss(
+      entries: journalEntries,
+      accounts: accounts,
+      period: period
+    )
+  }
+
+  var annualProfitAndLoss: ProfitAndLossReport? {
+    guard let period = fiscalYearPeriod else { return nil }
+    return profitAndLoss(period: period)
+  }
+
+  var annualBalanceSheet: BalanceSheetReport? {
+    guard let period = fiscalYearPeriod else { return nil }
+    return try? ClosingReports.balanceSheet(
+      entries: journalEntries,
+      accounts: accounts,
+      fiscalYearPeriod: period,
+      asOf: period.upperBound
+    )
+  }
+
+  func balanceSheet(asOf date: Date) -> BalanceSheetReport? {
+    guard let period = fiscalYearPeriod else { return nil }
+    return try? ClosingReports.balanceSheet(
+      entries: journalEntries,
+      accounts: accounts,
+      fiscalYearPeriod: period,
+      asOf: min(date, period.upperBound)
+    )
+  }
+
+  var taxClassificationBalances: [TaxClassificationBalance] {
+    (try? AccountingReports.taxClassificationBalances(entries: journalEntries)) ?? []
+  }
+
+  var receivableAging: [AgingAmount] {
+    (try? ClosingReports.receivableAging(
+      invoices: invoices,
+      counterparties: counterparties,
+      asOf: clock.now()
+    )) ?? []
+  }
+
+  var payableAging: [AgingAmount] {
+    (try? ClosingReports.payableAging(
+      bills: vendorBills,
+      counterparties: counterparties,
+      asOf: clock.now()
+    )) ?? []
+  }
+
+  func financialStatementsPDF() -> Data? {
+    guard let annualProfitAndLoss, let annualBalanceSheet, let profile, let fiscalYear else {
+      return nil
+    }
+    return try? ClosingReportExporter.financialStatementsPDF(
+      profitAndLoss: annualProfitAndLoss,
+      balanceSheet: annualBalanceSheet,
+      profileName: profile.tradeName,
+      fiscalYear: fiscalYear
+    )
+  }
+
+  func financialStatementsCSV() -> Data? {
+    guard let annualProfitAndLoss, let annualBalanceSheet, let fiscalYear else { return nil }
+    return ClosingReportExporter.financialStatementsCSV(
+      profitAndLoss: annualProfitAndLoss,
+      balanceSheet: annualBalanceSheet,
+      fiscalYear: fiscalYear
+    )
+  }
+
+  func journalExportPDF() -> Data? {
+    guard let profile, let fiscalYear else { return nil }
+    return try? ClosingReportExporter.journalPDF(
+      entries: journalEntries,
+      accounts: accounts,
+      profileName: profile.tradeName,
+      fiscalYear: fiscalYear
+    )
+  }
+
+  func journalExportCSV() -> Data? {
+    guard let fiscalYear else { return nil }
+    return ClosingReportExporter.journalCSV(
+      entries: journalEntries,
+      accounts: accounts,
+      fiscalYear: fiscalYear
+    )
+  }
+
+  func fixedAssetLedgerCSV() -> Data? {
+    guard let fiscalYear else { return nil }
+    return try? ClosingReportExporter.fixedAssetLedgerCSV(
+      assets: fixedAssets,
+      through: fiscalYear.calendarYear
+    )
+  }
+
   var trialBalance: TrialBalance? {
     try? AccountingReports.trialBalance(entries: journalEntries)
   }
@@ -645,6 +846,13 @@ final class AppModel: ObservableObject {
     vendorBills = try database.billing.vendorBills(
       BillingSearch(fiscalYearID: fiscalYear?.id)
     )
+    if let fiscalYear {
+      fixedAssets = try database.closing.assets(fiscalYearID: fiscalYear.id)
+      closingChecklist = try database.closingChecklist(asOf: clock.now())
+    } else {
+      fixedAssets = []
+      closingChecklist = ClosingChecklist(items: [])
+    }
   }
 
   private static func userFacingMessage(for error: Error) -> String {
@@ -683,6 +891,12 @@ final class AppModel: ObservableObject {
       "消込額が未収・未払残高を超えています。金額を修正してください。"
     case BillingError.settlementComponentsDoNotBalance:
       "入出金額と手数料・源泉税・値引の合計が一致していません。"
+    case FixedAssetError.invalidCost:
+      "取得価額は1円以上で入力してください。"
+    case FixedAssetError.invalidUsefulLife:
+      "耐用年数は1年以上で入力してください。"
+    case ClosingAdjustmentError.invalidRate:
+      "事業割合・家事割合は0%から100%の範囲で入力してください。"
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }
@@ -718,5 +932,29 @@ final class AppModel: ObservableObject {
       throw RepositoryError.notFound
     }
     return account.id
+  }
+
+  private var fiscalYearPeriod: ClosedRange<Date>? {
+    guard let fiscalYear else { return nil }
+    let calendar = Calendar(identifier: .gregorian)
+    guard
+      let start = calendar.date(
+        from: DateComponents(year: fiscalYear.calendarYear, month: 1, day: 1)
+      ),
+      let end = calendar.date(
+        from: DateComponents(
+          year: fiscalYear.calendarYear,
+          month: 12,
+          day: 31,
+          hour: 23,
+          minute: 59,
+          second: 59
+        ))
+    else { return nil }
+    return start...end
+  }
+
+  private var fiscalYearEnd: Date {
+    fiscalYearPeriod?.upperBound ?? clock.now()
   }
 }

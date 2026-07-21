@@ -4,6 +4,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
   case inbox
   case transactionInput
   case billing
+  case closing
   case journal
   case ledger
   case trialBalance
@@ -19,6 +20,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case .inbox: "受信箱"
     case .transactionInput: "取引入力"
     case .billing: "請求・支払"
+    case .closing: "決算・レポート"
     case .journal: "仕訳帳"
     case .ledger: "総勘定元帳"
     case .trialBalance: "試算表"
@@ -34,6 +36,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case .inbox: "tray.full"
     case .transactionInput: "square.and.pencil"
     case .billing: "doc.text"
+    case .closing: "checklist"
     case .journal: "book.closed"
     case .ledger: "books.vertical"
     case .trialBalance: "tablecells"
@@ -100,6 +103,9 @@ struct MainShellView: View {
               Label(
                 AppDestination.trialBalance.title, systemImage: AppDestination.trialBalance.icon)
             }
+            NavigationLink(value: AppDestination.closing) {
+              Label(AppDestination.closing.title, systemImage: AppDestination.closing.icon)
+            }
           }
           Section("マスター") {
             NavigationLink(value: AppDestination.accounts) {
@@ -146,6 +152,8 @@ struct MainShellView: View {
         JournalEntryView(model: model)
       case .billing:
         BillingWorkbenchView(model: model)
+      case .closing:
+        ClosingWorkbenchView(model: model)
       case .journal:
         JournalListView(model: model)
       case .ledger:

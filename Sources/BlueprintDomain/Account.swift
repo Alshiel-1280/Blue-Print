@@ -98,18 +98,33 @@ public enum StandardChartOfAccounts {
       make("1000", "現金", .asset, .debit, .outOfScope, .balanceSheetAsset, 10, createdAt),
       make("1100", "普通預金", .asset, .debit, .outOfScope, .balanceSheetAsset, 20, createdAt),
       make("1200", "売掛金", .asset, .debit, .outOfScope, .balanceSheetAsset, 30, createdAt),
+      make("1250", "未収収益", .asset, .debit, .outOfScope, .balanceSheetAsset, 32, createdAt),
+      make("1300", "棚卸資産", .asset, .debit, .outOfScope, .balanceSheetAsset, 34, createdAt),
+      make("1400", "前払金", .asset, .debit, .outOfScope, .balanceSheetAsset, 36, createdAt),
+      make("1500", "工具器具備品", .asset, .debit, .outOfScope, .balanceSheetAsset, 38, createdAt),
+      make(
+        "1590", "減価償却累計額", .asset, .credit, .outOfScope, .balanceSheetAsset, 39, createdAt),
       make("2000", "未払金", .liability, .credit, .outOfScope, .balanceSheetLiability, 40, createdAt),
       make("2100", "買掛金", .liability, .credit, .outOfScope, .balanceSheetLiability, 50, createdAt),
+      make("2200", "前受金", .liability, .credit, .outOfScope, .balanceSheetLiability, 52, createdAt),
+      make("2300", "未払費用", .liability, .credit, .outOfScope, .balanceSheetLiability, 54, createdAt),
       make("3000", "元入金", .equity, .credit, .outOfScope, .balanceSheetEquity, 60, createdAt),
       make("3100", "事業主貸", .equity, .debit, .outOfScope, .balanceSheetEquity, 70, createdAt),
       make("3200", "事業主借", .equity, .credit, .outOfScope, .balanceSheetEquity, 80, createdAt),
       make("4000", "売上高", .revenue, .credit, .standard10, .incomeStatementRevenue, 90, createdAt),
+      make(
+        "4100", "固定資産売却益", .revenue, .credit, .outOfScope, .incomeStatementRevenue, 95,
+        createdAt),
       make("5000", "仕入高", .expense, .debit, .standard10, .incomeStatementExpense, 100, createdAt),
       make("5100", "外注工賃", .expense, .debit, .standard10, .incomeStatementExpense, 110, createdAt),
       make("5200", "消耗品費", .expense, .debit, .standard10, .incomeStatementExpense, 120, createdAt),
       make("5300", "通信費", .expense, .debit, .standard10, .incomeStatementExpense, 130, createdAt),
       make("5400", "旅費交通費", .expense, .debit, .standard10, .incomeStatementExpense, 140, createdAt),
       make("5500", "支払手数料", .expense, .debit, .standard10, .incomeStatementExpense, 150, createdAt),
+      make("5600", "減価償却費", .expense, .debit, .outOfScope, .incomeStatementExpense, 160, createdAt),
+      make(
+        "5700", "固定資産売却損", .expense, .debit, .outOfScope, .incomeStatementExpense, 170,
+        createdAt),
     ]
   }
 

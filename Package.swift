@@ -15,6 +15,7 @@ let package = Package(
     .library(name: "BlueprintDocuments", targets: ["BlueprintDocuments"]),
     .library(name: "BlueprintImports", targets: ["BlueprintImports"]),
     .library(name: "BlueprintBilling", targets: ["BlueprintBilling"]),
+    .library(name: "BlueprintClosing", targets: ["BlueprintClosing"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
   ],
   targets: [
@@ -38,17 +39,21 @@ let package = Package(
       dependencies: ["BlueprintDomain", "BlueprintDocuments"]
     ),
     .target(
+      name: "BlueprintClosing",
+      dependencies: ["BlueprintDomain", "BlueprintBilling"]
+    ),
+    .target(
       name: "BlueprintPersistence",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
-        "BlueprintImports", "BlueprintBilling", "CSQLite",
+        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "CSQLite",
       ]
     ),
     .executableTarget(
       name: "BlueprintApp",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintPersistence", "BlueprintSharedCapture",
-        "BlueprintDocuments", "BlueprintImports", "BlueprintBilling",
+        "BlueprintDocuments", "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
       ],
       swiftSettings: [
         .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
@@ -80,10 +85,14 @@ let package = Package(
       dependencies: ["BlueprintBilling", "BlueprintDocuments", "BlueprintDomain"]
     ),
     .testTarget(
+      name: "BlueprintClosingTests",
+      dependencies: ["BlueprintClosing", "BlueprintBilling", "BlueprintDomain"]
+    ),
+    .testTarget(
       name: "BlueprintPersistenceTests",
       dependencies: [
         "BlueprintPersistence", "BlueprintDomain", "BlueprintAudit", "BlueprintDocuments",
-        "BlueprintImports", "BlueprintBilling",
+        "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
       ]
     ),
   ]

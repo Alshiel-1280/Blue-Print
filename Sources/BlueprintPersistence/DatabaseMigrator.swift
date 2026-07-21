@@ -76,6 +76,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion4(connection)
     case 5:
       try applyVersion5(connection)
+    case 6:
+      try applyVersion6(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -508,6 +510,60 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "CREATE INDEX vendor_bills_due_status_index ON vendor_bills(fiscal_year_id, status, due_date)"
     )
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+      ]
+    )
+  }
+
+  private func applyVersion6(_ connection: SQLiteConnection) throws {
+    if (try connection.scalarInt("SELECT COUNT(*) FROM business_profiles") ?? 0) > 0 {
+      try SQLiteAccountRepository(connection: connection).seedStandardAccounts(createdAt: Date())
+    }
+    try connection.execute(
+      """
+      CREATE TABLE fixed_assets (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+          code TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          status TEXT NOT NULL,
+          service_date REAL NOT NULL,
+          payload_json TEXT NOT NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      "CREATE INDEX fixed_assets_year_status_index ON fixed_assets(fiscal_year_id, status, code)"
+    )
+    try connection.execute(
+      """
+      CREATE TABLE household_allocation_rules (
+          id TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          payload_json TEXT NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE accrual_templates (
+          id TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          payload_json TEXT NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE closing_inventories (
+          fiscal_year_id TEXT PRIMARY KEY NOT NULL REFERENCES fiscal_years(id),
+          payload_json TEXT NOT NULL
+      ) STRICT
+      """)
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [

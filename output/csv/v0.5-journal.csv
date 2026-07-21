@@ -1,0 +1,6 @@
+﻿Blue-Print仕訳帳,年度,2026,"app=0.5.0,data=5,tax=2026.1-draft,form=2026.1-draft"
+日付,伝票ID,区分,摘要,勘定科目コード,勘定科目,借方,貸方,税率,インボイス区分
+2026年7月10日,3124446d-ea8e-40c9-84e4-8fecdee9a96e,standard,Webサイト制作売上,1200,売掛金,550000,,outOfScope,unknown
+2026年7月10日,3124446d-ea8e-40c9-84e4-8fecdee9a96e,standard,Webサイト制作売上,4000,売上高,,550000,outOfScope,unknown
+2026年7月12日,0b1c2a02-f07e-46c3-af30-af3cbc202eb7,standard,UIデザイン外注費,5100,外注工賃,198000,,outOfScope,unknown
+2026年7月12日,0b1c2a02-f07e-46c3-af30-af3cbc202eb7,standard,UIデザイン外注費,2100,買掛金,,198000,outOfScope,unknown
