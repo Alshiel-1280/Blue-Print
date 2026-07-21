@@ -20,11 +20,19 @@ let package = Package(
     .library(name: "BlueprintTax", targets: ["BlueprintTax"]),
     .library(name: "BlueprintETax", targets: ["BlueprintETax"]),
     .library(name: "BlueprintTransfer", targets: ["BlueprintTransfer"]),
+    .library(name: "BlueprintPerformance", targets: ["BlueprintPerformance"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
+    .executable(name: "blueprint-benchmark", targets: ["BlueprintBenchmark"]),
   ],
   targets: [
     .systemLibrary(name: "CSQLite"),
-    .target(name: "BlueprintDomain"),
+    .target(
+      name: "BlueprintDomain",
+      swiftSettings: [
+        .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
+        .define("BLUEPRINT_RELEASE", .when(configuration: .release)),
+      ]
+    ),
     .target(
       name: "BlueprintAudit",
       dependencies: ["BlueprintDomain"]
@@ -70,6 +78,17 @@ let package = Package(
         "BlueprintTax",
         "BlueprintETax", "BlueprintTransfer", "CSQLite",
       ]
+    ),
+    .target(
+      name: "BlueprintPerformance",
+      dependencies: [
+        "BlueprintDomain", "BlueprintPersistence", "BlueprintImports", "BlueprintClosing",
+        "BlueprintDocuments",
+      ]
+    ),
+    .executableTarget(
+      name: "BlueprintBenchmark",
+      dependencies: ["BlueprintPerformance"]
     ),
     .executableTarget(
       name: "BlueprintApp",
@@ -127,6 +146,10 @@ let package = Package(
     .testTarget(
       name: "BlueprintTransferTests",
       dependencies: ["BlueprintTransfer", "BlueprintDomain"]
+    ),
+    .testTarget(
+      name: "BlueprintPerformanceTests",
+      dependencies: ["BlueprintPerformance"]
     ),
     .testTarget(
       name: "BlueprintPersistenceTests",

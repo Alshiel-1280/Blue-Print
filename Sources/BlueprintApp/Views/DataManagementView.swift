@@ -39,6 +39,23 @@ struct DataManagementView: View {
     VStack(spacing: 0) {
       header
       Divider()
+      if let operation = model.activeOperation {
+        HStack(spacing: 12) {
+          ProgressView()
+            .controlSize(.small)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(operation.title).font(.subheadline.weight(.semibold))
+            Text(operation.detail).font(.caption).foregroundStyle(.secondary)
+          }
+          Spacer()
+          Text(operation.canCancel ? "取消可能" : "整合性維持のため完了まで取消不可")
+            .font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 10)
+        .background(.indigo.opacity(0.08))
+        .accessibilityElement(children: .combine)
+      }
       switch mode {
       case .migration: migrationWorkspace
       case .archive: archiveWorkspace
@@ -72,7 +89,7 @@ struct DataManagementView: View {
     HStack(spacing: 18) {
       VStack(alignment: .leading, spacing: 4) {
         Text("データ管理")
-          .font(.system(size: 28, weight: .semibold))
+          .font(.title.weight(.semibold))
         Text("移行、持ち出し、復元、破損診断をこのMac上で完結します。")
           .foregroundStyle(.secondary)
       }
@@ -280,18 +297,23 @@ struct DataManagementView: View {
 
   private var archiveWorkspace: some View {
     ScrollView {
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 360), spacing: 16)], spacing: 16) {
+      LazyVGrid(
+        columns: Array(repeating: GridItem(.flexible(minimum: 240), spacing: 16), count: 3),
+        spacing: 16
+      ) {
         actionCard(
           title: "全データを持ち出す",
           detail: "全テーブルのJSON、証憑原本と索引、検証用SQLiteスナップショットを1ファイルへまとめます。",
           icon: "shippingbox",
           button: "アーカイブを書き出す"
         ) {
-          startExport(
-            data: model.portableArchiveData(),
-            type: archiveType,
-            filename: "BluePrint-全データ-\(model.fiscalYear?.calendarYear ?? 0)"
-          )
+          model.preparePortableArchive { data in
+            startExport(
+              data: data,
+              type: archiveType,
+              filename: "BluePrint-全データ-\(model.fiscalYear?.calendarYear ?? 0)"
+            )
+          }
         }
 
         VStack(alignment: .leading, spacing: 14) {
@@ -302,13 +324,16 @@ struct DataManagementView: View {
           SecureField("12文字以上のパスフレーズ", text: $passphrase)
             .textFieldStyle(.roundedBorder)
           Button("暗号化バックアップを作成", systemImage: "externaldrive.badge.plus") {
-            startExport(
-              data: model.encryptedBackupData(passphrase: passphrase),
-              type: backupType,
-              filename: "BluePrint-暗号化バックアップ"
-            )
+            model.prepareEncryptedBackup(passphrase: passphrase) { data in
+              startExport(
+                data: data,
+                type: backupType,
+                filename: "BluePrint-暗号化バックアップ"
+              )
+            }
           }
           .buttonStyle(.borderedProminent)
+          .disabled(model.activeOperation != nil)
           Divider()
           HStack {
             VStack(alignment: .leading, spacing: 3) {
@@ -324,6 +349,7 @@ struct DataManagementView: View {
             }
           }
         }
+        .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
         .dataCard()
 
         VStack(alignment: .leading, spacing: 14) {
@@ -357,8 +383,10 @@ struct DataManagementView: View {
               .foregroundStyle(.green)
           }
         }
+        .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
         .dataCard()
       }
+      .frame(maxWidth: .infinity, alignment: .topLeading)
       .padding(24)
     }
   }
@@ -372,8 +400,11 @@ struct DataManagementView: View {
             .font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Button("診断を実行", systemImage: "stethoscope") { model.runDataDiagnostics() }
-          .buttonStyle(.borderedProminent)
+        Button("診断を実行", systemImage: "stethoscope") {
+          model.runDataDiagnosticsInBackground()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(model.activeOperation != nil)
       }
       .padding(20)
       Divider()
@@ -430,7 +461,9 @@ struct DataManagementView: View {
       Text(detail).foregroundStyle(.secondary)
       Button(button, systemImage: "square.and.arrow.up", action: action)
         .buttonStyle(.borderedProminent)
+        .disabled(model.activeOperation != nil)
     }
+    .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
     .dataCard()
   }
 

@@ -1,0 +1,17 @@
+{
+  "appVersion" : "0.9.0",
+  "evidenceRecords" : 20000,
+  "generatedAt" : "2026-07-21T15:06:13Z",
+  "journalEntries" : 50000,
+  "journalLines" : 100000,
+  "metrics" : [
+    { "name" : "database-open", "passed" : true, "seconds" : 0.001004333, "targetSeconds" : 3 },
+    { "name" : "journal-search", "passed" : true, "seconds" : 0.105309208, "targetSeconds" : 1 },
+    { "name" : "evidence-search", "passed" : true, "seconds" : 0.004043209, "targetSeconds" : 1 },
+    { "name" : "major-screen-data", "passed" : true, "seconds" : 1.23092675, "targetSeconds" : 3 },
+    { "name" : "monthly-trial-balance", "passed" : true, "seconds" : 0.027560542, "targetSeconds" : 5 },
+    { "name" : "annual-financial-statements", "passed" : true, "seconds" : 0.885886792, "targetSeconds" : 10 },
+    { "name" : "csv-preview-10000", "passed" : true, "seconds" : 0.427906458, "targetSeconds" : 60 }
+  ],
+  "peakResidentBytes" : 349683712
+}

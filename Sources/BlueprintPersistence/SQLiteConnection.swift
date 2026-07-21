@@ -76,6 +76,12 @@ public final class SQLiteConnection: @unchecked Sendable {
     handle = database
     try execute("PRAGMA foreign_keys = ON")
     try execute("PRAGMA busy_timeout = 5000")
+    // Keep the working set bounded while allowing indexed reads to use a modest mmap window.
+    // These values are intentionally conservative for an Apple Silicon Mac shared with other apps.
+    try execute("PRAGMA cache_size = -32768")
+    try execute("PRAGMA mmap_size = 67108864")
+    try execute("PRAGMA temp_store = MEMORY")
+    try execute("PRAGMA journal_size_limit = 16777216")
   }
 
   deinit {

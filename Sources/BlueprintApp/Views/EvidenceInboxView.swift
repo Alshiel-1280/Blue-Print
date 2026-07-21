@@ -2,6 +2,7 @@ import AppKit
 import BlueprintDocuments
 import BlueprintDomain
 import BlueprintImports
+import ImageIO
 import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -785,7 +786,7 @@ private struct EvidencePreview: View {
     Group {
       if let url, mimeType == "application/pdf" {
         PDFPreview(url: url)
-      } else if let url, let image = NSImage(contentsOf: url) {
+      } else if let url, let image = EvidenceImageCache.shared.image(for: url) {
         Image(nsImage: image)
           .resizable()
           .scaledToFit()
@@ -794,6 +795,33 @@ private struct EvidencePreview: View {
         ContentUnavailableView("プレビューできません", systemImage: "doc")
       }
     }
+  }
+}
+
+private final class EvidenceImageCache: @unchecked Sendable {
+  static let shared = EvidenceImageCache()
+
+  private let cache = NSCache<NSURL, NSImage>()
+
+  private init() {
+    cache.countLimit = 24
+    cache.totalCostLimit = 64 * 1_024 * 1_024
+  }
+
+  func image(for url: URL) -> NSImage? {
+    if let cached = cache.object(forKey: url as NSURL) { return cached }
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: 2_048,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { return nil }
+    let image = NSImage(cgImage: cgImage, size: .zero)
+    cache.setObject(image, forKey: url as NSURL, cost: cgImage.bytesPerRow * cgImage.height)
+    return image
   }
 }
 

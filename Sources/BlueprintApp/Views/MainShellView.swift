@@ -56,7 +56,6 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
 struct MainShellView: View {
   @ObservedObject var model: AppModel
-  @State private var destination: AppDestination? = .inbox
 
   var body: some View {
     NavigationSplitView {
@@ -73,7 +72,7 @@ struct MainShellView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
 
-        List(selection: $destination) {
+        List(selection: $model.selectedDestination) {
           Section("メイン") {
             NavigationLink(value: AppDestination.inbox) {
               HStack {
@@ -141,6 +140,7 @@ struct MainShellView: View {
           }
         }
         .listStyle(.sidebar)
+        .accessibilityLabel("メインナビゲーション")
 
         HStack(spacing: 8) {
           Image(systemName: "checkmark.circle.fill")
@@ -159,7 +159,7 @@ struct MainShellView: View {
       }
       .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 280)
     } detail: {
-      switch destination ?? .inbox {
+      switch model.selectedDestination ?? .inbox {
       case .inbox:
         EvidenceInboxView(model: model)
       case .transactionInput:
@@ -188,7 +188,7 @@ struct MainShellView: View {
         AuditView(model: model)
       }
     }
-    .navigationTitle(destination?.title ?? "Blue-Print")
+    .navigationTitle(model.selectedDestination?.title ?? "Blue-Print")
     .frame(minWidth: 1_040, minHeight: 700)
   }
 }

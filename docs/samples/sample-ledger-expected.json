@@ -1,0 +1,12 @@
+{
+  "calendarYear": 2025,
+  "entryCount": 4,
+  "debitTotalYen": 624000,
+  "creditTotalYen": 624000,
+  "profitBeforeClosingYen": 102000,
+  "cashEndingYen": 599000,
+  "notes": [
+    "匿名化した最小サンプルであり、税額申告の完成例ではない",
+    "家事按分後の通信費は事業分のみを費用に残す"
+  ]
+}

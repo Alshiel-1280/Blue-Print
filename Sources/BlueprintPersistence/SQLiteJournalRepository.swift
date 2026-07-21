@@ -80,7 +80,27 @@ public final class SQLiteJournalRepository: JournalRepository, @unchecked Sendab
       "SELECT e.* FROM journal_entries e WHERE \(clauses.joined(separator: " AND ")) ORDER BY e.transaction_date DESC, e.created_at DESC",
       bindings: bindings
     )
-    return try rows.map(decodeEntry(row:))
+    guard !rows.isEmpty else { return [] }
+
+    // Fetch lines in bounded batches. The previous per-entry lookup turned a large journal
+    // search into an N+1 query and made opening a ten-year data set unnecessarily expensive.
+    let entryIDs = try rows.map { try uuid($0, "id") }
+    var linesByEntryID: [EntityID: [SQLiteRow]] = [:]
+    for start in stride(from: 0, to: entryIDs.count, by: 800) {
+      let chunk = Array(entryIDs[start..<min(start + 800, entryIDs.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+      let lineRows = try connection.query(
+        "SELECT * FROM journal_lines WHERE entry_id IN (\(placeholders)) ORDER BY entry_id, line_order",
+        bindings: chunk.map { .text($0.uuidString.lowercased()) }
+      )
+      for line in lineRows {
+        linesByEntryID[try uuid(line, "entry_id"), default: []].append(line)
+      }
+    }
+    return try rows.map { row in
+      let id = try uuid(row, "id")
+      return try decodeEntry(row: row, lineRows: linesByEntryID[id] ?? [])
+    }
   }
 
   public func delete(id: EntityID) throws {
@@ -172,6 +192,11 @@ public final class SQLiteJournalRepository: JournalRepository, @unchecked Sendab
       "SELECT * FROM journal_lines WHERE entry_id = ? ORDER BY line_order",
       bindings: [.text(id.uuidString.lowercased())]
     )
+    return try decodeEntry(row: row, lineRows: lineRows)
+  }
+
+  private func decodeEntry(row: SQLiteRow, lineRows: [SQLiteRow]) throws -> JournalEntry {
+    let id = try uuid(row, "id")
     let lines = try lineRows.map { line in
       try JournalLine(
         id: uuid(line, "id"),

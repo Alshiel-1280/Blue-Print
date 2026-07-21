@@ -1,0 +1,5 @@
+date,description,debit_account,debit_yen,credit_account,credit_yen,tax_rate,invoice_status
+2025/01/01,元入金,現金,500000,元入金,500000,outOfScope,unknown
+2025/01/10,現金売上,現金,110000,売上高,110000,standard10,qualified
+2025/01/15,消耗品購入,消耗品費,11000,現金,11000,standard10,qualified
+2025/01/31,通信費の家事按分,事業主貸,3000,通信費,3000,standard10,qualified

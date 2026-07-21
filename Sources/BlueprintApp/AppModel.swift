@@ -14,6 +14,12 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+  struct ActiveOperation: Equatable, Sendable {
+    let title: String
+    let detail: String
+    let canCancel: Bool
+  }
+
   @Published private(set) var profile: BusinessProfile?
   @Published private(set) var fiscalYear: FiscalYear?
   @Published private(set) var accounts: [Account] = []
@@ -42,8 +48,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var diagnosticReport: DiagnosticReport?
   @Published private(set) var restorePreview: RestorePreview?
   @Published private(set) var automaticBackupEnabled = false
+  @Published private(set) var activeOperation: ActiveOperation?
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
+  @Published var selectedDestination: AppDestination? = .inbox
 
   private var database: BlueprintDatabase?
   private let clock: any BlueprintClock
@@ -76,6 +84,10 @@ final class AppModel: ObservableObject {
   }
 
   var isSetupComplete: Bool { profile != nil && fiscalYear != nil }
+
+  var presentedErrorMessage: String? {
+    errorMessage.map(Self.actionableErrorMessage)
+  }
 
   func createInitialSetup(
     ownerName: String,
@@ -1281,31 +1293,62 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func portableArchiveData() -> Data? {
-    guard let service = portableDataService() else { return nil }
-    do {
-      let data = try service.encodeArchive(service.makeArchive(createdAt: clock.now()))
-      errorMessage = nil
-      return data
-    } catch {
-      errorMessage = Self.userFacingMessage(for: error)
-      return nil
+  func preparePortableArchive(completion: @escaping (Data?) -> Void) {
+    guard let service = portableDataService(), activeOperation == nil else {
+      completion(nil)
+      return
+    }
+    let createdAt = clock.now()
+    activeOperation = ActiveOperation(
+      title: "全データを準備しています",
+      detail: "DB、証憑、索引を検証しながらアーカイブへまとめています。",
+      canCancel: false
+    )
+    Task { [weak self] in
+      do {
+        let data = try await Task.detached(priority: .userInitiated) {
+          try service.encodeArchive(service.makeArchive(createdAt: createdAt))
+        }.value
+        self?.errorMessage = nil
+        self?.activeOperation = nil
+        completion(data)
+      } catch {
+        self?.errorMessage = Self.userFacingMessage(for: error)
+        self?.activeOperation = nil
+        completion(nil)
+      }
     }
   }
 
-  func encryptedBackupData(passphrase: String) -> Data? {
-    guard let service = portableDataService() else { return nil }
+  func prepareEncryptedBackup(passphrase: String, completion: @escaping (Data?) -> Void) {
+    guard let service = portableDataService(), activeOperation == nil else {
+      completion(nil)
+      return
+    }
     guard passphrase.count >= 12 else {
       errorMessage = "パスフレーズが短いためバックアップを作成できません。12文字以上で入力してください。"
-      return nil
+      completion(nil)
+      return
     }
-    do {
-      let data = try service.makeEncryptedBackup(passphrase: passphrase, createdAt: clock.now())
-      errorMessage = nil
-      return data
-    } catch {
-      errorMessage = Self.userFacingMessage(for: error)
-      return nil
+    let createdAt = clock.now()
+    activeOperation = ActiveOperation(
+      title: "暗号化バックアップを作成しています",
+      detail: "データを収集し、AES-256-GCMで暗号化しています。",
+      canCancel: false
+    )
+    Task { [weak self] in
+      do {
+        let data = try await Task.detached(priority: .userInitiated) {
+          try service.makeEncryptedBackup(passphrase: passphrase, createdAt: createdAt)
+        }.value
+        self?.errorMessage = nil
+        self?.activeOperation = nil
+        completion(data)
+      } catch {
+        self?.errorMessage = Self.userFacingMessage(for: error)
+        self?.activeOperation = nil
+        completion(nil)
+      }
     }
   }
 
@@ -1366,13 +1409,25 @@ final class AppModel: ObservableObject {
     }
   }
 
-  func runDataDiagnostics() {
-    guard let service = portableDataService() else { return }
-    do {
-      diagnosticReport = try service.diagnose(createdAt: clock.now())
-      errorMessage = nil
-    } catch {
-      errorMessage = Self.userFacingMessage(for: error)
+  func runDataDiagnosticsInBackground() {
+    guard let service = portableDataService(), activeOperation == nil else { return }
+    let createdAt = clock.now()
+    activeOperation = ActiveOperation(
+      title: "データを診断しています",
+      detail: "SQLite、借貸残高、証憑ハッシュを読み取り専用で確認しています。",
+      canCancel: false
+    )
+    Task { [weak self] in
+      do {
+        let report = try await Task.detached(priority: .userInitiated) {
+          try service.diagnose(createdAt: createdAt)
+        }.value
+        self?.diagnosticReport = report
+        self?.errorMessage = nil
+      } catch {
+        self?.errorMessage = Self.userFacingMessage(for: error)
+      }
+      self?.activeOperation = nil
     }
   }
 
@@ -1546,6 +1601,17 @@ final class AppModel: ObservableObject {
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }
+  }
+
+  private static func actionableErrorMessage(_ message: String) -> String {
+    if message.contains("原因：") && message.contains("影響：") && message.contains("修正方法：") {
+      return message
+    }
+    return """
+      原因：\(message)
+      影響：この操作は完了していません。確定済みのデータは変更されていません。
+      修正方法：表示された内容を確認して再実行してください。解決しない場合は「データ管理」の診断を実行してください。
+      """
   }
 
   private static func makeDefaultDatabase() throws -> BlueprintDatabase {
