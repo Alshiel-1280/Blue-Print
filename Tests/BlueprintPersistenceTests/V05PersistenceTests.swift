@@ -33,7 +33,7 @@ final class V05PersistenceTests: XCTestCase {
       databaseURL: databaseURL,
       backupHook: FileMigrationBackupHook(backupDirectory: backupDirectory)
     )
-    XCTAssertEqual(try database.connection.scalarInt("PRAGMA user_version"), 6)
+    XCTAssertEqual(try database.connection.scalarInt("PRAGMA user_version"), 7)
     XCTAssertEqual(try database.profiles.fetchAll().first?.tradeName, "移行テスト事業者")
     XCTAssertEqual(
       try database.connection.scalarInt(
@@ -46,7 +46,7 @@ final class V05PersistenceTests: XCTestCase {
       includingPropertiesForKeys: nil
     )
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v5-to-v6"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v5-to-v7"))
   }
 
   func testGenerateQAFixtureWhenConfigured() throws {

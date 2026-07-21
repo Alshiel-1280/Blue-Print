@@ -78,6 +78,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion5(connection)
     case 6:
       try applyVersion6(connection)
+    case 7:
+      try applyVersion7(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -564,6 +566,42 @@ public struct DatabaseMigrator: Sendable {
           payload_json TEXT NOT NULL
       ) STRICT
       """)
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+      ]
+    )
+  }
+
+  private func applyVersion7(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE filing_workspaces (
+          id TEXT PRIMARY KEY NOT NULL,
+          fiscal_year_id TEXT NOT NULL UNIQUE REFERENCES fiscal_years(id),
+          payload_json TEXT NOT NULL
+      ) STRICT
+      """)
+    let recordTables = [
+      "wage_statements", "filing_properties", "rental_ledger_entries",
+      "securities_annual_reports", "stock_loss_carryforwards", "other_income_entries",
+      "filing_deductions", "unsupported_filing_cases",
+    ]
+    for table in recordTables {
+      try connection.execute(
+        """
+        CREATE TABLE \(table) (
+            id TEXT PRIMARY KEY NOT NULL,
+            fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id),
+            payload_json TEXT NOT NULL
+        ) STRICT
+        """)
+      try connection.execute(
+        "CREATE INDEX \(table)_year_index ON \(table)(fiscal_year_id)"
+      )
+    }
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [

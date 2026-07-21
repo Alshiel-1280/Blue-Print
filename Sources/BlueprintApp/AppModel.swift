@@ -3,6 +3,7 @@ import BlueprintBilling
 import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
+import BlueprintFiling
 import BlueprintImports
 import BlueprintPersistence
 import Combine
@@ -24,6 +25,15 @@ final class AppModel: ObservableObject {
   @Published private(set) var vendorBills: [VendorBill] = []
   @Published private(set) var fixedAssets: [FixedAsset] = []
   @Published private(set) var closingChecklist = ClosingChecklist(items: [])
+  @Published private(set) var filingWorkspace: FilingWorkspace?
+  @Published private(set) var wageStatements: [WageWithholdingStatement] = []
+  @Published private(set) var filingProperties: [FilingProperty] = []
+  @Published private(set) var rentalLedgerEntries: [RentalLedgerEntry] = []
+  @Published private(set) var securitiesReports: [SecuritiesAnnualReport] = []
+  @Published private(set) var stockLossCarryforwards: [StockLossCarryforward] = []
+  @Published private(set) var otherIncomeEntries: [OtherIncomeEntry] = []
+  @Published private(set) var filingDeductions: [FilingDeduction] = []
+  @Published private(set) var unsupportedFilingCases: [UnsupportedFilingCase] = []
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -713,6 +723,233 @@ final class AppModel: ObservableObject {
     }
   }
 
+  func saveWageStatement(
+    payerName: String,
+    paymentAmount: Int64,
+    withholdingTax: Int64,
+    socialInsurance: Int64,
+    evidenceDocumentID: EntityID?
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let wage = try WageWithholdingStatement(
+        fiscalYearID: fiscalYear.id,
+        payerName: payerName,
+        paymentAmount: Money(yen: paymentAmount),
+        withholdingTax: Money(yen: withholdingTax),
+        socialInsurance: Money(yen: socialInsurance),
+        evidenceDocumentID: evidenceDocumentID,
+        reviewState: evidenceDocumentID == nil ? .unconfirmed : .confirmed
+      )
+      try database.saveWageStatement(
+        wage,
+        attachment: filingAttachment(
+          evidenceDocumentID, title: "源泉徴収票 \(payerName)", category: "給与"),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveFilingProperty(name: String, address: String, tenantName: String) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.filing.saveProperty(
+        FilingProperty(
+          fiscalYearID: fiscalYear.id, name: name, address: address, tenantName: tenantName))
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveRentalEntry(
+    propertyID: EntityID?,
+    transactionDate: Date,
+    kind: RentalLedgerEntryKind,
+    description: String,
+    amount: Int64,
+    evidenceDocumentID: EntityID?
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let entry = try RentalLedgerEntry(
+        fiscalYearID: fiscalYear.id,
+        propertyID: propertyID,
+        transactionDate: transactionDate,
+        kind: kind,
+        description: description,
+        amount: Money(yen: amount),
+        evidenceDocumentID: evidenceDocumentID
+      )
+      try database.saveRentalLedgerEntry(
+        entry,
+        attachment: filingAttachment(evidenceDocumentID, title: description, category: "不動産"),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveSecuritiesReport(
+    brokerName: String,
+    accountName: String,
+    withholdingKind: SecuritiesWithholdingKind,
+    proceeds: Int64,
+    acquisitionCost: Int64,
+    nationalTax: Int64,
+    localTax: Int64,
+    dividend: Int64,
+    dividendTax: Int64,
+    evidenceDocumentID: EntityID?
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let report = try SecuritiesAnnualReport(
+        fiscalYearID: fiscalYear.id,
+        brokerName: brokerName,
+        accountName: accountName,
+        withholdingKind: withholdingKind,
+        proceeds: Money(yen: proceeds),
+        acquisitionCost: Money(yen: acquisitionCost),
+        nationalWithholdingTax: Money(yen: nationalTax),
+        localWithholdingTax: Money(yen: localTax),
+        dividendAmount: Money(yen: dividend),
+        dividendWithholdingTax: Money(yen: dividendTax),
+        evidenceDocumentID: evidenceDocumentID
+      )
+      try database.saveSecuritiesAnnualReport(
+        report,
+        attachment: filingAttachment(
+          evidenceDocumentID, title: "年間取引報告書 \(brokerName)", category: "株式"),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveStockLossCarryforward(
+    sourceYear: Int, broughtForward: Int64, currentLoss: Int64, utilized: Int64
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.filing.saveLossCarryforward(
+        StockLossCarryforward(
+          fiscalYearID: fiscalYear.id,
+          sourceYear: sourceYear,
+          broughtForward: Money(yen: broughtForward),
+          currentYearLoss: Money(yen: currentLoss),
+          utilized: Money(yen: utilized)
+        ))
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveOtherIncome(
+    kind: OtherIncomeKind,
+    title: String,
+    revenue: Int64,
+    expenses: Int64,
+    withholdingTax: Int64,
+    evidenceDocumentID: EntityID?
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let income = try OtherIncomeEntry(
+        fiscalYearID: fiscalYear.id,
+        kind: kind,
+        title: title,
+        revenue: Money(yen: revenue),
+        expenses: Money(yen: expenses),
+        withholdingTax: Money(yen: withholdingTax),
+        evidenceDocumentID: evidenceDocumentID
+      )
+      try database.saveOtherIncomeEntry(
+        income,
+        attachment: filingAttachment(evidenceDocumentID, title: title, category: "その他所得"),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveFilingDeduction(
+    kind: DeductionKind, title: String, amount: Int64, evidenceDocumentID: EntityID?
+  ) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let deduction = try FilingDeduction(
+        fiscalYearID: fiscalYear.id,
+        kind: kind,
+        title: title,
+        amount: Money(yen: amount),
+        evidenceDocumentID: evidenceDocumentID
+      )
+      try database.saveFilingDeduction(
+        deduction,
+        attachment: filingAttachment(evidenceDocumentID, title: title, category: "所得控除"),
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func saveUnsupportedFilingCase(title: String, guidance: String) {
+    guard let database, let fiscalYear else { return }
+    do {
+      try database.filing.saveUnsupportedCase(
+        UnsupportedFilingCase(
+          fiscalYearID: fiscalYear.id, title: title, guidance: guidance))
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  var propertyIncomeReport: PropertyIncomeReport {
+    PropertyIncomeReport.make(entries: rentalLedgerEntries)
+  }
+
+  var filingSummary: FilingWorkspaceSummary? {
+    guard let fiscalYear, let filingWorkspace, let annualProfitAndLoss else { return nil }
+    return try? FilingAggregation.summary(
+      fiscalYearID: fiscalYear.id,
+      businessIncome: BusinessIncomeSnapshot(
+        revenue: annualProfitAndLoss.totalRevenue,
+        expenses: annualProfitAndLoss.totalExpenses,
+        income: annualProfitAndLoss.profit,
+        generatedAt: clock.now()
+      ),
+      workspace: filingWorkspace,
+      wages: wageStatements,
+      rentalEntries: rentalLedgerEntries,
+      securitiesReports: securitiesReports,
+      otherIncome: otherIncomeEntries,
+      deductions: filingDeductions,
+      unsupportedCases: unsupportedFilingCases
+    )
+  }
+
   func profitAndLoss(period: ClosedRange<Date>) -> ProfitAndLossReport? {
     try? ClosingReports.profitAndLoss(
       entries: journalEntries,
@@ -849,9 +1086,44 @@ final class AppModel: ObservableObject {
     if let fiscalYear {
       fixedAssets = try database.closing.assets(fiscalYearID: fiscalYear.id)
       closingChecklist = try database.closingChecklist(asOf: clock.now())
+      if let stored = try database.filing.workspace(fiscalYearID: fiscalYear.id) {
+        filingWorkspace = stored
+      } else {
+        let workspace = FilingWorkspace(
+          metadata: EntityMetadata(createdAt: clock.now()), fiscalYearID: fiscalYear.id)
+        try database.filing.saveWorkspace(workspace)
+        filingWorkspace = workspace
+      }
+      wageStatements = try database.filing.wages(fiscalYearID: fiscalYear.id)
+      filingProperties = try database.filing.properties(fiscalYearID: fiscalYear.id)
+      rentalLedgerEntries = try database.filing.rentalEntries(fiscalYearID: fiscalYear.id)
+      securitiesReports = try database.filing.securitiesReports(fiscalYearID: fiscalYear.id)
+      stockLossCarryforwards = try database.filing.lossCarryforwards(fiscalYearID: fiscalYear.id)
+      otherIncomeEntries = try database.filing.otherIncome(fiscalYearID: fiscalYear.id)
+      filingDeductions = try database.filing.deductions(fiscalYearID: fiscalYear.id)
+      unsupportedFilingCases = try database.filing.unsupportedCases(fiscalYearID: fiscalYear.id)
     } else {
       fixedAssets = []
       closingChecklist = ClosingChecklist(items: [])
+      filingWorkspace = nil
+      wageStatements = []
+      filingProperties = []
+      rentalLedgerEntries = []
+      securitiesReports = []
+      stockLossCarryforwards = []
+      otherIncomeEntries = []
+      filingDeductions = []
+      unsupportedFilingCases = []
+    }
+  }
+
+  private func filingAttachment(
+    _ evidenceDocumentID: EntityID?,
+    title: String,
+    category: String
+  ) -> FilingAttachment? {
+    evidenceDocumentID.map {
+      FilingAttachment(evidenceDocumentID: $0, title: title, category: category)
     }
   }
 
@@ -897,6 +1169,12 @@ final class AppModel: ObservableObject {
       "耐用年数は1年以上で入力してください。"
     case ClosingAdjustmentError.invalidRate:
       "事業割合・家事割合は0%から100%の範囲で入力してください。"
+    case FilingError.invalidAmount:
+      "申告資料の金額は0円以上で入力してください。"
+    case FilingError.invalidLossCarryforward:
+      "損失の利用額が繰越可能額を超えています。前年繰越・当年損失・利用額を確認してください。"
+    case FilingError.missingName:
+      "支払者、物件、証券会社または資料名を入力してください。"
     default:
       "保存処理を完了できませんでした。入力内容と保存先の空き容量を確認し、もう一度実行してください。"
     }

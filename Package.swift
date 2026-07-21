@@ -16,6 +16,7 @@ let package = Package(
     .library(name: "BlueprintImports", targets: ["BlueprintImports"]),
     .library(name: "BlueprintBilling", targets: ["BlueprintBilling"]),
     .library(name: "BlueprintClosing", targets: ["BlueprintClosing"]),
+    .library(name: "BlueprintFiling", targets: ["BlueprintFiling"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
   ],
   targets: [
@@ -43,10 +44,14 @@ let package = Package(
       dependencies: ["BlueprintDomain", "BlueprintBilling"]
     ),
     .target(
+      name: "BlueprintFiling",
+      dependencies: ["BlueprintDomain", "BlueprintDocuments", "BlueprintClosing"]
+    ),
+    .target(
       name: "BlueprintPersistence",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
-        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "CSQLite",
+        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling", "CSQLite",
       ]
     ),
     .executableTarget(
@@ -54,6 +59,7 @@ let package = Package(
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintPersistence", "BlueprintSharedCapture",
         "BlueprintDocuments", "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
+        "BlueprintFiling",
       ],
       swiftSettings: [
         .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
@@ -89,10 +95,14 @@ let package = Package(
       dependencies: ["BlueprintClosing", "BlueprintBilling", "BlueprintDomain"]
     ),
     .testTarget(
+      name: "BlueprintFilingTests",
+      dependencies: ["BlueprintFiling", "BlueprintClosing", "BlueprintDomain"]
+    ),
+    .testTarget(
       name: "BlueprintPersistenceTests",
       dependencies: [
         "BlueprintPersistence", "BlueprintDomain", "BlueprintAudit", "BlueprintDocuments",
-        "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
+        "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
       ]
     ),
   ]

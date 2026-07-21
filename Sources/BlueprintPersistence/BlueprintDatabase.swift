@@ -3,6 +3,7 @@ import BlueprintBilling
 import BlueprintClosing
 import BlueprintDocuments
 import BlueprintDomain
+import BlueprintFiling
 import BlueprintImports
 import Foundation
 
@@ -16,6 +17,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
   public let imports: SQLiteImportRepository
   public let billing: SQLiteBillingRepository
   public let closing: SQLiteClosingRepository
+  public let filing: SQLiteFilingRepository
   public let evidenceFileStore: EvidenceFileStore
   public let auditEvents: SQLiteAuditEventRepository
 
@@ -35,6 +37,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
     imports = SQLiteImportRepository(connection: connection)
     billing = SQLiteBillingRepository(connection: connection)
     closing = SQLiteClosingRepository(connection: connection)
+    filing = SQLiteFilingRepository(connection: connection)
     let root = databaseURL.deletingLastPathComponent().deletingLastPathComponent()
     evidenceFileStore = EvidenceFileStore(
       originalsDirectory: root.appendingPathComponent("Evidence/Originals", isDirectory: true),
@@ -1325,6 +1328,56 @@ public final class BlueprintDatabase: @unchecked Sendable {
     }
   }
 
+  public func saveWageStatement(
+    _ wage: WageWithholdingStatement, attachment: FilingAttachment?, at date: Date
+  ) throws {
+    try connection.transaction {
+      try filing.saveWage(wage)
+      try attachToFilingWorkspace(attachment, fiscalYearID: wage.fiscalYearID, at: date)
+      try appendFilingAudit(targetType: "WageWithholdingStatement", id: wage.id, at: date)
+    }
+  }
+
+  public func saveRentalLedgerEntry(
+    _ entry: RentalLedgerEntry, attachment: FilingAttachment?, at date: Date
+  ) throws {
+    try connection.transaction {
+      try filing.saveRentalEntry(entry)
+      try attachToFilingWorkspace(attachment, fiscalYearID: entry.fiscalYearID, at: date)
+      try appendFilingAudit(targetType: "RentalLedgerEntry", id: entry.id, at: date)
+    }
+  }
+
+  public func saveSecuritiesAnnualReport(
+    _ report: SecuritiesAnnualReport, attachment: FilingAttachment?, at date: Date
+  ) throws {
+    try connection.transaction {
+      try filing.saveSecuritiesReport(report)
+      try attachToFilingWorkspace(attachment, fiscalYearID: report.fiscalYearID, at: date)
+      try appendFilingAudit(targetType: "SecuritiesAnnualReport", id: report.id, at: date)
+    }
+  }
+
+  public func saveOtherIncomeEntry(
+    _ income: OtherIncomeEntry, attachment: FilingAttachment?, at date: Date
+  ) throws {
+    try connection.transaction {
+      try filing.saveOtherIncome(income)
+      try attachToFilingWorkspace(attachment, fiscalYearID: income.fiscalYearID, at: date)
+      try appendFilingAudit(targetType: "OtherIncomeEntry", id: income.id, at: date)
+    }
+  }
+
+  public func saveFilingDeduction(
+    _ deduction: FilingDeduction, attachment: FilingAttachment?, at date: Date
+  ) throws {
+    try connection.transaction {
+      try filing.saveDeduction(deduction)
+      try attachToFilingWorkspace(attachment, fiscalYearID: deduction.fiscalYearID, at: date)
+      try appendFilingAudit(targetType: "FilingDeduction", id: deduction.id, at: date)
+    }
+  }
+
   public func closingChecklist(asOf date: Date) throws -> ClosingChecklist {
     guard let fiscalYear = try fiscalYears.fetchAll().first else {
       throw RepositoryError.notFound
@@ -1370,6 +1423,28 @@ public final class BlueprintDatabase: @unchecked Sendable {
         isResolved: try closing.inventory(fiscalYearID: fiscalYear.id) != nil
       ),
     ])
+  }
+
+  private func attachToFilingWorkspace(
+    _ attachment: FilingAttachment?, fiscalYearID: EntityID, at date: Date
+  ) throws {
+    guard let attachment else { return }
+    var workspace =
+      try filing.workspace(fiscalYearID: fiscalYearID)
+      ?? FilingWorkspace(metadata: EntityMetadata(createdAt: date), fiscalYearID: fiscalYearID)
+    workspace.attach(attachment, at: date)
+    try filing.saveWorkspace(workspace)
+  }
+
+  private func appendFilingAudit(targetType: String, id: EntityID, at date: Date) throws {
+    try auditEvents.append(
+      AuditEvent(
+        occurredAt: date,
+        actorKind: .localUser,
+        action: .created,
+        targetType: targetType,
+        targetID: id.uuidString.lowercased()
+      ))
   }
 
   private func invoiceIssueLines(
