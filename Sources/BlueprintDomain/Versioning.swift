@@ -1,5 +1,5 @@
 public enum BlueprintVersions {
-  public static let app = "0.2.0"
+  public static let app = "0.2.1"
   public static let databaseSchema = 3
   public static let dataFormat = 2
   public static let taxRuleSet = "2026.1-draft"

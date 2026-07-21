@@ -19,6 +19,7 @@ struct JournalEntryView: View {
     DraftJournalLine(side: .debit),
     DraftJournalLine(side: .credit),
   ]
+  @FocusState private var descriptionFocused: Bool
 
   private var difference: Int64 {
     rows.reduce(0) { partial, row in
@@ -26,6 +27,8 @@ struct JournalEntryView: View {
       return partial + (row.side == .debit ? amount : -amount)
     }
   }
+
+  private var hasEnteredAmount: Bool { rows.contains { amount(of: $0) > 0 } }
 
   private var canPost: Bool {
     rows.count >= 2 && rows.allSatisfy { $0.accountID != nil && amount(of: $0) > 0 }
@@ -55,6 +58,7 @@ struct JournalEntryView: View {
             .textFieldStyle(.roundedBorder)
             .font(.title3)
             .accessibilityLabel("摘要")
+            .focused($descriptionFocused)
           Menu("摘要候補") {
             ForEach(Array(Set(model.journalEntries.map(\.description))).sorted(), id: \.self) {
               candidate in
@@ -153,10 +157,10 @@ struct JournalEntryView: View {
             for index in rows.indices { rows[index].side = rows[index].side.opposite }
           }
           Spacer()
-          Text(difference == 0 ? "貸借一致" : "差額 \(difference.formatted())円")
+          Text(balanceStatusText)
             .font(.headline.monospacedDigit())
-            .foregroundStyle(difference == 0 ? .green : .orange)
-            .accessibilityLabel(difference == 0 ? "借方と貸方は一致" : "差額 \(difference)円")
+            .foregroundStyle(hasEnteredAmount && difference == 0 ? .green : .orange)
+            .accessibilityLabel(balanceStatusAccessibilityLabel)
         }
 
         Spacer()
@@ -175,6 +179,7 @@ struct JournalEntryView: View {
       }
       .padding(32)
     }
+    .onAppear { descriptionFocused = true }
   }
 
   private func amount(of row: DraftJournalLine) -> Int64 {
@@ -187,6 +192,16 @@ struct JournalEntryView: View {
         model.journalEntries.flatMap(\.lines).map(\.counterparty).filter { !$0.isEmpty }
       )
     ).sorted()
+  }
+
+  private var balanceStatusText: String {
+    guard hasEnteredAmount else { return "金額未入力" }
+    return difference == 0 ? "貸借一致" : "差額 \(difference.formatted())円"
+  }
+
+  private var balanceStatusAccessibilityLabel: String {
+    guard hasEnteredAmount else { return "金額が未入力です" }
+    return difference == 0 ? "借方と貸方は一致" : "差額 \(difference)円"
   }
 
   private func post() {
@@ -210,6 +225,7 @@ struct JournalEntryView: View {
       if model.errorMessage == nil {
         description = ""
         rows = [DraftJournalLine(side: .debit), DraftJournalLine(side: .credit)]
+        descriptionFocused = true
       }
     } catch {
       model.errorMessage = "入力行を仕訳へ変換できませんでした。科目と1円以上の金額を確認してください。"

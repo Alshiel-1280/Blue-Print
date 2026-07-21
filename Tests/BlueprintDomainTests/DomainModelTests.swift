@@ -212,4 +212,57 @@ final class DomainModelTests: XCTestCase {
     XCTAssertEqual(closing.kind, .closing)
     XCTAssertEqual(try closing.totals().debits, try closing.totals().credits)
   }
+
+  func testZeroYenAndDateBoundaryAreRejected() throws {
+    let firstDay = Date(timeIntervalSince1970: 1_767_225_600)
+    let year = try FiscalYear(
+      metadata: EntityMetadata(createdAt: firstDay),
+      calendarYear: 2026,
+      taxRuleSetID: "rules",
+      formRuleSetID: "forms"
+    )
+    let accounts = StandardChartOfAccounts.accounts(createdAt: firstDay)
+    XCTAssertThrowsError(
+      try JournalLine(accountID: accounts[0].id, side: .debit, amount: .zero)
+    ) { error in
+      XCTAssertEqual(error as? JournalError, .amountMustBePositive)
+    }
+    var outside = JournalEntry(
+      metadata: EntityMetadata(createdAt: firstDay),
+      fiscalYearID: year.id,
+      transactionDate: Date(timeIntervalSince1970: 1_735_689_600),
+      description: "年度外",
+      lines: [
+        try JournalLine(accountID: accounts[0].id, side: .debit, amount: Money(yen: 1)),
+        try JournalLine(accountID: accounts[8].id, side: .credit, amount: Money(yen: 1)),
+      ]
+    )
+    XCTAssertThrowsError(try outside.post(for: year, at: firstDay)) { error in
+      XCTAssertEqual(error as? JournalError, .dateOutsideFiscalYear)
+    }
+  }
+
+  func testCompositeJournalWithThreeLinesBalances() throws {
+    let now = Date(timeIntervalSince1970: 1_767_225_600)
+    let year = try FiscalYear(
+      metadata: EntityMetadata(createdAt: now),
+      calendarYear: 2026,
+      taxRuleSetID: "rules",
+      formRuleSetID: "forms"
+    )
+    let accounts = StandardChartOfAccounts.accounts(createdAt: now)
+    var entry = JournalEntry(
+      metadata: EntityMetadata(createdAt: now),
+      fiscalYearID: year.id,
+      transactionDate: now,
+      description: "複合仕訳",
+      lines: [
+        try JournalLine(accountID: accounts[0].id, side: .debit, amount: Money(yen: 700)),
+        try JournalLine(accountID: accounts[1].id, side: .debit, amount: Money(yen: 300)),
+        try JournalLine(accountID: accounts[8].id, side: .credit, amount: Money(yen: 1_000)),
+      ]
+    )
+    try entry.post(for: year, at: now)
+    XCTAssertEqual(entry.status, .posted)
+  }
 }
