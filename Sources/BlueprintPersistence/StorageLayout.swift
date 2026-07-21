@@ -50,4 +50,47 @@ public struct StorageLayout: Equatable, Sendable {
       try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
     }
   }
+
+  public func applyPendingRestoreIfNeeded(fileManager: FileManager = .default) throws {
+    let marker = root.appendingPathComponent("restore-on-next-launch")
+    let pending = root.appendingPathComponent("RestorePending", isDirectory: true)
+    guard fileManager.fileExists(atPath: marker.path),
+      fileManager.fileExists(atPath: pending.appendingPathComponent("Database").path)
+    else { return }
+
+    let formatter = ISO8601DateFormatter()
+    let timestamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+    let rollback = root.appendingPathComponent(
+      "Backups/RestoreRollback/\(timestamp)", isDirectory: true)
+    try fileManager.createDirectory(at: rollback, withIntermediateDirectories: true)
+    let names = ["Database", "Evidence"]
+    for name in names {
+      let current = root.appendingPathComponent(name, isDirectory: true)
+      if fileManager.fileExists(atPath: current.path) {
+        try fileManager.copyItem(at: current, to: rollback.appendingPathComponent(name))
+      }
+    }
+    do {
+      for name in names {
+        let current = root.appendingPathComponent(name, isDirectory: true)
+        let replacement = pending.appendingPathComponent(name, isDirectory: true)
+        if fileManager.fileExists(atPath: current.path) { try fileManager.removeItem(at: current) }
+        if fileManager.fileExists(atPath: replacement.path) {
+          try fileManager.moveItem(at: replacement, to: current)
+        }
+      }
+      try fileManager.removeItem(at: pending)
+      try fileManager.removeItem(at: marker)
+    } catch {
+      for name in names {
+        let current = root.appendingPathComponent(name, isDirectory: true)
+        let saved = rollback.appendingPathComponent(name, isDirectory: true)
+        if fileManager.fileExists(atPath: current.path) { try? fileManager.removeItem(at: current) }
+        if fileManager.fileExists(atPath: saved.path) {
+          try? fileManager.copyItem(at: saved, to: current)
+        }
+      }
+      throw error
+    }
+  }
 }

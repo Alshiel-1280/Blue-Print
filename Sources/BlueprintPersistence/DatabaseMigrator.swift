@@ -82,6 +82,8 @@ public struct DatabaseMigrator: Sendable {
       try applyVersion7(connection)
     case 8:
       try applyVersion8(connection)
+    case 9:
+      try applyVersion9(connection)
     default:
       preconditionFailure("Missing migration \(version)")
     }
@@ -646,6 +648,43 @@ public struct DatabaseMigrator: Sendable {
         .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
         .text("tax_rule_set_version"), .text(BlueprintVersions.taxRuleSet),
         .text("form_rule_set_version"), .text(BlueprintVersions.formRuleSet),
+      ]
+    )
+  }
+
+  private func applyVersion9(_ connection: SQLiteConnection) throws {
+    try connection.execute(
+      """
+      CREATE TABLE yayoi_migration_batches (
+          id TEXT PRIMARY KEY NOT NULL,
+          source_filename TEXT NOT NULL,
+          product TEXT NOT NULL,
+          imported_at REAL NOT NULL,
+          state TEXT NOT NULL,
+          entry_count INTEGER NOT NULL CHECK (entry_count >= 0),
+          quarantined_count INTEGER NOT NULL CHECK (quarantined_count >= 0),
+          mapping_json TEXT NOT NULL,
+          balance_difference_yen INTEGER NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      """
+      CREATE TABLE backup_events (
+          id TEXT PRIMARY KEY NOT NULL,
+          created_at REAL NOT NULL,
+          kind TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          format_version INTEGER NOT NULL,
+          database_schema_version INTEGER NOT NULL,
+          verified INTEGER NOT NULL CHECK (verified IN (0,1)),
+          manifest_json TEXT NOT NULL
+      ) STRICT
+      """)
+    try connection.execute(
+      "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
+      bindings: [
+        .text("app_version"), .text(BlueprintVersions.app),
+        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
       ]
     )
   }

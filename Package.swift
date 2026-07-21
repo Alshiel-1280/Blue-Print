@@ -19,6 +19,7 @@ let package = Package(
     .library(name: "BlueprintFiling", targets: ["BlueprintFiling"]),
     .library(name: "BlueprintTax", targets: ["BlueprintTax"]),
     .library(name: "BlueprintETax", targets: ["BlueprintETax"]),
+    .library(name: "BlueprintTransfer", targets: ["BlueprintTransfer"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
   ],
   targets: [
@@ -58,12 +59,16 @@ let package = Package(
       dependencies: ["BlueprintDomain", "BlueprintFiling", "BlueprintTax"]
     ),
     .target(
+      name: "BlueprintTransfer",
+      dependencies: ["BlueprintDomain"]
+    ),
+    .target(
       name: "BlueprintPersistence",
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
         "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
         "BlueprintTax",
-        "BlueprintETax", "CSQLite",
+        "BlueprintETax", "BlueprintTransfer", "CSQLite",
       ]
     ),
     .executableTarget(
@@ -71,12 +76,13 @@ let package = Package(
       dependencies: [
         "BlueprintDomain", "BlueprintAudit", "BlueprintPersistence", "BlueprintSharedCapture",
         "BlueprintDocuments", "BlueprintImports", "BlueprintBilling", "BlueprintClosing",
-        "BlueprintFiling", "BlueprintTax", "BlueprintETax",
+        "BlueprintFiling", "BlueprintTax", "BlueprintETax", "BlueprintTransfer",
       ],
       swiftSettings: [
         .define("BLUEPRINT_DEBUG", .when(configuration: .debug)),
         .define("BLUEPRINT_RELEASE", .when(configuration: .release)),
-      ]
+      ],
+      linkerSettings: [.linkedFramework("Security")]
     ),
     .testTarget(
       name: "BlueprintDomainTests",
@@ -119,12 +125,16 @@ let package = Package(
       dependencies: ["BlueprintETax", "BlueprintTax", "BlueprintFiling", "BlueprintDomain"]
     ),
     .testTarget(
+      name: "BlueprintTransferTests",
+      dependencies: ["BlueprintTransfer", "BlueprintDomain"]
+    ),
+    .testTarget(
       name: "BlueprintPersistenceTests",
       dependencies: [
         "BlueprintPersistence", "BlueprintDomain", "BlueprintAudit", "BlueprintDocuments",
         "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
         "BlueprintTax",
-        "BlueprintETax",
+        "BlueprintETax", "BlueprintTransfer",
       ]
     ),
   ]

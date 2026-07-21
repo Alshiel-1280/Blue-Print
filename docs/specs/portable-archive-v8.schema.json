@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Alshiel-1280/Blue-Print/docs/specs/portable-archive-v8.schema.json",
+  "title": "Blue-Print Portable Archive v8",
+  "type": "object",
+  "required": ["manifest", "tables", "csvTables", "evidence", "databaseSnapshotBase64"],
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "required": [
+        "formatName",
+        "formatVersion",
+        "appVersion",
+        "databaseSchemaVersion",
+        "createdAt",
+        "tableRowCounts",
+        "evidenceCount",
+        "evidenceHashes",
+        "debitTotalYen",
+        "creditTotalYen"
+      ],
+      "properties": {
+        "formatName": { "const": "blueprint-portable-archive" },
+        "formatVersion": { "const": 8 },
+        "appVersion": { "type": "string" },
+        "databaseSchemaVersion": { "type": "integer", "minimum": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "tableRowCounts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "evidenceCount": { "type": "integer", "minimum": 0 },
+        "evidenceHashes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "debitTotalYen": { "type": "integer" },
+        "creditTotalYen": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "columns", "rows"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z0-9_]+$" },
+          "columns": { "type": "array", "items": { "type": "string" } },
+          "rows": { "type": "array", "items": { "type": "object" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "csvTables": {
+      "type": "object",
+      "description": "Table name to RFC 4180-style UTF-8 CSV text.",
+      "additionalProperties": { "type": "string" }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relativePath", "sha256", "byteCount", "dataBase64"],
+        "properties": {
+          "relativePath": { "type": "string", "pattern": "^Evidence/Originals/" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "byteCount": { "type": "integer", "minimum": 1 },
+          "dataBase64": { "type": "string", "contentEncoding": "base64" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "databaseSnapshotBase64": { "type": "string", "contentEncoding": "base64" }
+  },
+  "additionalProperties": false
+}

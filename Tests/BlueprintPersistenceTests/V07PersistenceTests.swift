@@ -58,7 +58,7 @@ final class V07PersistenceTests: XCTestCase {
       backupHook: FileMigrationBackupHook(backupDirectory: backupDirectory)
     )
 
-    XCTAssertEqual(try database.connection.scalarInt("PRAGMA user_version"), 8)
+    XCTAssertEqual(try database.connection.scalarInt("PRAGMA user_version"), 9)
     XCTAssertEqual(try database.profiles.fetchAll().first?.tradeName, "移行テスト事業者")
     XCTAssertEqual(
       try database.connection.scalarInt(
@@ -69,7 +69,7 @@ final class V07PersistenceTests: XCTestCase {
     let backups = try FileManager.default.contentsOfDirectory(
       at: backupDirectory, includingPropertiesForKeys: nil)
     XCTAssertEqual(backups.count, 1)
-    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v7-to-v8"))
+    XCTAssertTrue(backups[0].lastPathComponent.contains("pre-migration-v7-to-v9"))
   }
 
   func testETaxExportHistoryRoundTripsWithHashVersionsAndChecklist() throws {

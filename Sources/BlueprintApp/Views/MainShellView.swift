@@ -11,6 +11,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
   case trialBalance
   case accounts
   case businessSettings
+  case dataManagement
   case versions
   case audit
 
@@ -28,6 +29,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case .trialBalance: "試算表"
     case .accounts: "勘定科目"
     case .businessSettings: "事業者設定"
+    case .dataManagement: "データ管理"
     case .versions: "バージョン"
     case .audit: "監査記録"
     }
@@ -45,6 +47,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case .trialBalance: "tablecells"
     case .accounts: "cylinder.split.1x2"
     case .businessSettings: "gearshape"
+    case .dataManagement: "externaldrive.badge.timemachine"
     case .versions: "info.circle"
     case .audit: "clock.arrow.trianglehead.counterclockwise.rotate.90"
     }
@@ -124,6 +127,11 @@ struct MainShellView: View {
                 AppDestination.businessSettings.title,
                 systemImage: AppDestination.businessSettings.icon)
             }
+            NavigationLink(value: AppDestination.dataManagement) {
+              Label(
+                AppDestination.dataManagement.title, systemImage: AppDestination.dataManagement.icon
+              )
+            }
             NavigationLink(value: AppDestination.audit) {
               Label(AppDestination.audit.title, systemImage: AppDestination.audit.icon)
             }
@@ -172,6 +180,8 @@ struct MainShellView: View {
         AccountsView(model: model)
       case .businessSettings:
         BusinessSettingsView(model: model)
+      case .dataManagement:
+        DataManagementView(model: model)
       case .versions:
         VersionView()
       case .audit:

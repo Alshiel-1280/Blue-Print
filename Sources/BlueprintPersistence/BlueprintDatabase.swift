@@ -6,6 +6,7 @@ import BlueprintDomain
 import BlueprintETax
 import BlueprintFiling
 import BlueprintImports
+import BlueprintTransfer
 import Foundation
 
 public final class BlueprintDatabase: @unchecked Sendable {
@@ -51,6 +52,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
 
   public static func openDefault() throws -> BlueprintDatabase {
     let layout = try StorageLayout.applicationSupport()
+    try layout.applyPendingRestoreIfNeeded()
     try layout.createDirectories()
     return try BlueprintDatabase(
       databaseURL: layout.databaseURL,
@@ -236,6 +238,120 @@ public final class BlueprintDatabase: @unchecked Sendable {
           reason: "posted"
         )
       )
+    }
+  }
+
+  @discardableResult
+  public func importYayoiMigration(
+    _ batch: YayoiMigrationBatch,
+    fiscalYearID: EntityID,
+    at date: Date
+  ) throws -> [JournalEntry] {
+    guard batch.state != .cancelled else { throw YayoiMigrationError.cancelledBatch }
+    guard !batch.entries.isEmpty else { throw YayoiMigrationError.noImportableRows }
+    return try connection.transaction {
+      guard let fiscalYear = try fiscalYears.fetch(id: fiscalYearID) else {
+        throw RepositoryError.notFound
+      }
+      guard fiscalYear.status != .locked else { throw RepositoryError.fiscalYearLocked }
+      let mappings = Dictionary(
+        uniqueKeysWithValues: batch.accountMappings.compactMap { mapping in
+          mapping.targetAccountID.map { (mapping.sourceAccount, $0) }
+        })
+      var subAccountIDs: [String: EntityID] = [:]
+      for mapping in batch.subAccountMappings {
+        guard let targetAccountID = mappings[mapping.sourceAccount] else {
+          throw YayoiMigrationError.unmappedAccount(mapping.sourceAccount)
+        }
+        let key = "\(mapping.sourceAccount)\u{1f}\(mapping.sourceSubAccount)"
+        if let existing = try connection.query(
+          "SELECT id FROM sub_accounts WHERE account_id = ? AND name = ? LIMIT 1",
+          bindings: [
+            .text(targetAccountID.uuidString.lowercased()), .text(mapping.sourceSubAccount),
+          ]
+        ).first?["id"]?.string.flatMap(UUID.init(uuidString:)) {
+          subAccountIDs[key] = existing
+          continue
+        }
+        let id = UUID()
+        let order = Int(
+          try connection.scalarInt(
+            "SELECT COALESCE(MAX(display_order), 0) + 1 FROM sub_accounts WHERE account_id = ?",
+            bindings: [.text(targetAccountID.uuidString.lowercased())]
+          ) ?? 1)
+        try connection.execute(
+          """
+          INSERT INTO sub_accounts (
+            id, account_id, code, name, display_order, is_active, created_at, updated_at
+          ) VALUES (?,?,?,?,?,?,?,?)
+          """,
+          bindings: [
+            .text(id.uuidString.lowercased()), .text(targetAccountID.uuidString.lowercased()),
+            .text("YAYOI-\(id.uuidString.prefix(8))"), .text(mapping.sourceSubAccount),
+            .integer(Int64(order)), .integer(1), .real(date.timeIntervalSince1970),
+            .real(date.timeIntervalSince1970),
+          ]
+        )
+        subAccountIDs[key] = id
+      }
+      var imported: [JournalEntry] = []
+      for source in batch.entries {
+        let lines = try source.lines.map { sourceLine in
+          guard let accountID = mappings[sourceLine.sourceAccount] else {
+            throw YayoiMigrationError.unmappedAccount(sourceLine.sourceAccount)
+          }
+          return try JournalLine(
+            accountID: accountID,
+            subAccountID: sourceLine.sourceSubAccount.flatMap {
+              subAccountIDs["\(sourceLine.sourceAccount)\u{1f}\($0)"]
+            },
+            side: sourceLine.side,
+            amount: sourceLine.amount,
+            taxRate: sourceLine.tax.rate,
+            invoiceStatus: sourceLine.tax.invoiceStatus,
+            deductibleBasisPoints: sourceLine.tax.deductibleBasisPoints,
+            memo: "弥生 \(source.sourceRows.lowerBound)-\(source.sourceRows.upperBound)行"
+          )
+        }
+        var entry = JournalEntry(
+          metadata: EntityMetadata(createdAt: date),
+          fiscalYearID: fiscalYearID,
+          transactionDate: source.date,
+          description: source.description,
+          kind: source.description == "期首残高" ? .opening : .standard,
+          lines: lines
+        )
+        try entry.post(for: fiscalYear, at: date)
+        try journals.persist(entry)
+        try auditEvents.append(
+          AuditEvent(
+            occurredAt: date,
+            actorKind: .localUser,
+            action: .created,
+            targetType: "JournalEntry",
+            targetID: entry.id.uuidString.lowercased(),
+            reason: "yayoi-migration:\(batch.id.uuidString.lowercased())"
+          ))
+        imported.append(entry)
+      }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let mappingJSON = String(decoding: try encoder.encode(batch), as: UTF8.self)
+      try connection.execute(
+        """
+        INSERT INTO yayoi_migration_batches (
+          id, source_filename, product, imported_at, state, entry_count,
+          quarantined_count, mapping_json, balance_difference_yen
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        bindings: [
+          .text(batch.id.uuidString.lowercased()), .text(batch.sourceFilename),
+          .text(batch.product.rawValue), .real(date.timeIntervalSince1970), .text("imported"),
+          .integer(Int64(imported.count)), .integer(Int64(batch.quarantinedRows.count)),
+          .text(mappingJSON), .integer(batch.balanceDifference.yen),
+        ]
+      )
+      return imported
     }
   }
 

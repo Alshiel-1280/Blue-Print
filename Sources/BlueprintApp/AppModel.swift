@@ -8,6 +8,7 @@ import BlueprintFiling
 import BlueprintImports
 import BlueprintPersistence
 import BlueprintTax
+import BlueprintTransfer
 import Combine
 import Foundation
 
@@ -37,6 +38,10 @@ final class AppModel: ObservableObject {
   @Published private(set) var filingDeductions: [FilingDeduction] = []
   @Published private(set) var unsupportedFilingCases: [UnsupportedFilingCase] = []
   @Published private(set) var eTaxExports: [ETaxExportRecord] = []
+  @Published private(set) var yayoiMigrationPreview: YayoiMigrationBatch?
+  @Published private(set) var diagnosticReport: DiagnosticReport?
+  @Published private(set) var restorePreview: RestorePreview?
+  @Published private(set) var automaticBackupEnabled = false
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
 
@@ -48,6 +53,21 @@ final class AppModel: ObservableObject {
     do {
       self.database = try database ?? Self.makeDefaultDatabase()
       try reload()
+      automaticBackupEnabled = UserDefaults.standard.bool(forKey: "automaticBackupEnabled")
+      if automaticBackupEnabled { try? performAutomaticBackupIfNeeded() }
+      #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["BLUEPRINT_QA_YAYOI_FILE"],
+          let data = FileManager.default.contents(atPath: path)
+        {
+          yayoiMigrationPreview = try YayoiCSVImporter.preview(
+            data: data,
+            filename: URL(fileURLWithPath: path).lastPathComponent,
+            product: .desktopOrOnline,
+            availableAccounts: accounts,
+            importedAt: clock.now()
+          )
+        }
+      #endif
     } catch {
       self.database = nil
       errorMessage = Self.userFacingMessage(for: error)
@@ -1215,6 +1235,147 @@ final class AppModel: ObservableObject {
     try? AccountingReports.trialBalance(entries: journalEntries)
   }
 
+  func previewYayoiMigration(data: Data, filename: String, product: YayoiProduct) {
+    do {
+      yayoiMigrationPreview = try YayoiCSVImporter.preview(
+        data: data,
+        filename: filename,
+        product: product,
+        availableAccounts: accounts,
+        importedAt: clock.now()
+      )
+      errorMessage = nil
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func updateYayoiMapping(sourceAccount: String, targetAccountID: EntityID?) {
+    guard var preview = yayoiMigrationPreview,
+      let index = preview.accountMappings.firstIndex(where: { $0.sourceAccount == sourceAccount })
+    else { return }
+    preview.accountMappings[index].targetAccountID = targetAccountID
+    preview.accountMappings[index].targetAccountName =
+      accounts.first {
+        $0.id == targetAccountID
+      }?.name
+    yayoiMigrationPreview = preview
+  }
+
+  func cancelYayoiMigration() {
+    guard var preview = yayoiMigrationPreview else { return }
+    preview.cancel()
+    yayoiMigrationPreview = preview
+  }
+
+  func commitYayoiMigration() {
+    guard let database, let fiscalYear, let preview = yayoiMigrationPreview else { return }
+    do {
+      try database.importYayoiMigration(preview, fiscalYearID: fiscalYear.id, at: clock.now())
+      try? performAutomaticBackupIfNeeded(force: true)
+      yayoiMigrationPreview = nil
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func portableArchiveData() -> Data? {
+    guard let service = portableDataService() else { return nil }
+    do {
+      let data = try service.encodeArchive(service.makeArchive(createdAt: clock.now()))
+      errorMessage = nil
+      return data
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+      return nil
+    }
+  }
+
+  func encryptedBackupData(passphrase: String) -> Data? {
+    guard let service = portableDataService() else { return nil }
+    guard passphrase.count >= 12 else {
+      errorMessage = "パスフレーズが短いためバックアップを作成できません。12文字以上で入力してください。"
+      return nil
+    }
+    do {
+      let data = try service.makeEncryptedBackup(passphrase: passphrase, createdAt: clock.now())
+      errorMessage = nil
+      return data
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+      return nil
+    }
+  }
+
+  func enableAutomaticBackups(passphrase: String) {
+    guard passphrase.count >= 12 else {
+      errorMessage = "パスフレーズが短いため自動バックアップを有効にできません。12文字以上で入力してください。"
+      return
+    }
+    do {
+      try BackupCredentialStore().save(passphrase)
+      UserDefaults.standard.set(true, forKey: "automaticBackupEnabled")
+      automaticBackupEnabled = true
+      try performAutomaticBackupIfNeeded(force: true)
+      errorMessage = nil
+    } catch {
+      errorMessage = "自動バックアップを有効にできません。キーチェーンへの保存権限を確認してください。"
+    }
+  }
+
+  func disableAutomaticBackups() {
+    do {
+      try BackupCredentialStore().remove()
+      UserDefaults.standard.set(false, forKey: "automaticBackupEnabled")
+      automaticBackupEnabled = false
+      errorMessage = nil
+    } catch {
+      errorMessage = "自動バックアップ設定を解除できません。キーチェーンの状態を確認してください。"
+    }
+  }
+
+  func inspectEncryptedBackup(data: Data, passphrase: String) {
+    guard let service = portableDataService() else { return }
+    do {
+      let archive = try service.openEncryptedBackup(data, passphrase: passphrase)
+      pendingRestoreArchive = archive
+      restorePreview = service.previewRestore(archive)
+      errorMessage = nil
+    } catch {
+      pendingRestoreArchive = nil
+      restorePreview = nil
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func stageInspectedRestore() {
+    guard let service = portableDataService(), let archive = pendingRestoreArchive else { return }
+    do {
+      let pending = service.root.appendingPathComponent("RestorePending", isDirectory: true)
+      if FileManager.default.fileExists(atPath: pending.path) {
+        try FileManager.default.removeItem(at: pending)
+      }
+      try service.restore(archive, to: pending)
+      try Data("pending".utf8).write(
+        to: service.root.appendingPathComponent("restore-on-next-launch"), options: .atomic)
+      errorMessage = nil
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
+  func runDataDiagnostics() {
+    guard let service = portableDataService() else { return }
+    do {
+      diagnosticReport = try service.diagnose(createdAt: clock.now())
+      errorMessage = nil
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
   func dismissError() {
     errorMessage = nil
   }
@@ -1279,6 +1440,37 @@ final class AppModel: ObservableObject {
     }
   }
 
+  private var pendingRestoreArchive: PortableArchive?
+
+  private func portableDataService() -> PortableDataService? {
+    guard let database else { return nil }
+    let root = database.connection.databaseURL.deletingLastPathComponent()
+      .deletingLastPathComponent()
+    return PortableDataService(connection: database.connection, root: root)
+  }
+
+  private func performAutomaticBackupIfNeeded(force: Bool = false) throws {
+    guard automaticBackupEnabled,
+      let passphrase = try BackupCredentialStore().load(),
+      let service = portableDataService()
+    else { return }
+    let calendar = Calendar(identifier: .gregorian)
+    if !force,
+      let last = UserDefaults.standard.object(forKey: "automaticBackupLastRun") as? Date,
+      calendar.isDate(last, inSameDayAs: clock.now())
+    {
+      return
+    }
+    let directory = service.root.appendingPathComponent("Backups/Automatic", isDirectory: true)
+    _ = try service.writeAutomaticBackup(
+      passphrase: passphrase,
+      directory: directory,
+      retainGenerations: 7,
+      createdAt: clock.now()
+    )
+    UserDefaults.standard.set(clock.now(), forKey: "automaticBackupLastRun")
+  }
+
   private func filingAttachment(
     _ evidenceDocumentID: EntityID?,
     title: String,
@@ -1307,6 +1499,16 @@ final class AppModel: ObservableObject {
       "取引日が申告年度の範囲外です。年度内の日付へ修正してください。"
     case RuleSetError.unsupportedYear(let year):
       "\(year)年分の税務・e-Taxルールは未対応です。対応年度を確認してください。"
+    case YayoiMigrationError.unmappedAccount(let account):
+      "弥生の勘定科目「\(account)」に取込先がありません。科目マッピングを設定してください。"
+    case YayoiMigrationError.cancelledBatch:
+      "取消済みの移行プレビューは取り込めません。CSVをもう一度選択してください。"
+    case PortableDataError.authenticationFailed:
+      "バックアップを開けません。パスフレーズが正しいか確認してください。"
+    case PortableDataError.incompatibleVersion(let found, let supported):
+      "バックアップ形式 \(found) は、このアプリの対応形式 \(supported) より新しいため復元できません。"
+    case PortableDataError.evidenceHashMismatch(let path):
+      "証憑原本のハッシュが一致しません。復元を中止しました: \(path)"
     case XTXGenerationError.validationFailed(let issues):
       "e-Tax出力前の検証で\(issues.count)件のエラーが見つかりました。申告ワークスペースで修正してください。"
     case JournalError.missingReason:
@@ -1350,6 +1552,7 @@ final class AppModel: ObservableObject {
     #if DEBUG
       if let root = ProcessInfo.processInfo.environment["BLUEPRINT_DATA_ROOT"], !root.isEmpty {
         let layout = StorageLayout(root: URL(fileURLWithPath: root, isDirectory: true))
+        try layout.applyPendingRestoreIfNeeded()
         try layout.createDirectories()
         return try BlueprintDatabase(
           databaseURL: layout.databaseURL,
