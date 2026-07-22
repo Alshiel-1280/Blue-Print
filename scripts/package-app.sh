@@ -38,6 +38,7 @@ bundle_path="$output_root/$app_name.app"
 mkdir -p "$bundle_path/Contents/MacOS" "$bundle_path/Contents/Resources"
 cp "$binary_path" "$bundle_path/Contents/MacOS/$app_name"
 cp Resources/Info.plist "$bundle_path/Contents/Info.plist"
+cp Resources/BluePrint.icns "$bundle_path/Contents/Resources/BluePrint.icns"
 chmod 755 "$bundle_path/Contents/MacOS/$app_name"
 printf 'APPL????' > "$bundle_path/Contents/PkgInfo"
 

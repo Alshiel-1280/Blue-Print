@@ -14,6 +14,8 @@
     <string>BluePrint</string>
     <key>CFBundleDisplayName</key>
     <string>BluePrint</string>
+    <key>CFBundleIconFile</key>
+    <string>BluePrint.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
