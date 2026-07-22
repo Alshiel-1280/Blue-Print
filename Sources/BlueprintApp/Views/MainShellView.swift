@@ -56,6 +56,8 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
 struct MainShellView: View {
   @ObservedObject var model: AppModel
+  @AppStorage("didShowBackupOnboarding") private var didShowBackupOnboarding = false
+  @State private var isBackupOnboardingPresented = false
 
   var body: some View {
     NavigationSplitView {
@@ -190,5 +192,18 @@ struct MainShellView: View {
     }
     .navigationTitle(model.selectedDestination?.title ?? "Blue-Print")
     .frame(minWidth: 1_040, minHeight: 700)
+    .task {
+      if !didShowBackupOnboarding { isBackupOnboardingPresented = true }
+    }
+    .sheet(isPresented: $isBackupOnboardingPresented) {
+      BackupOnboardingView {
+        didShowBackupOnboarding = true
+        isBackupOnboardingPresented = false
+        model.selectedDestination = .dataManagement
+      } postpone: {
+        didShowBackupOnboarding = true
+        isBackupOnboardingPresented = false
+      }
+    }
   }
 }

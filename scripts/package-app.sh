@@ -39,5 +39,14 @@ mkdir -p "$bundle_path/Contents/MacOS" "$bundle_path/Contents/Resources"
 cp "$binary_path" "$bundle_path/Contents/MacOS/$app_name"
 cp Resources/Info.plist "$bundle_path/Contents/Info.plist"
 chmod 755 "$bundle_path/Contents/MacOS/$app_name"
+printf 'APPL????' > "$bundle_path/Contents/PkgInfo"
+
+# SwiftPM signs the standalone executable, but that signature does not seal the
+# Info.plist after it is copied into an application bundle.  Give self builds a
+# complete ad-hoc bundle signature so the generated .app has one consistent
+# local signature. Official builds are signed later with Developer ID.
+if [ "$build_origin" = "self" ]; then
+    codesign --force --sign - "$bundle_path"
+fi
 
 echo "$bundle_path"

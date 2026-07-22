@@ -35,6 +35,7 @@ swift run BluePrint
 リリース構成は `swift build -c release` で確認できます。Xcode では `Package.swift` を開くと、macOS アプリと共有モジュールを同じワークスペースで扱えます。
 
 詳細な自己ビルド、公式署名・公証、検証手順は [BUILDING.md](./BUILDING.md) にあります。
+安定版の問題優先度と互換性規則は [SUPPORT.md](./SUPPORT.md) を参照してください。
 
 ## モジュール境界
 
