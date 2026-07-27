@@ -29,3 +29,21 @@
 2. Developer ID署名、Apple公証、公式バイナリとチェックサムの公開を完了する。
 
 Codex配下で生成したQAコピーは来歴属性の影響を受け、Launch Servicesが`-10827`で起動を拒否した。実行ファイルを直接起動するとアプリ登録前に停止するため、全アプリ遷移のGUI再確認は上記外部配布ゲート時に、Launch Services経由の正式な署名済みバンドルで行う。
+
+## 配布資格の準備
+
+2026-07-28、リリース担当者の通常ターミナルで
+`notarytool history --keychain-profile blueprint-notary`が成功した。
+これはNotary Service資格情報の準備完了を示すが、アプリ本体の署名、公証、
+ticketのstaple完了を示すものではない。
+
+正式リリースを開始する前に、追加した`release-preflight.sh`で次を確認する。
+
+- Git worktreeに未commitの変更がない
+- `Info.plist`と`BlueprintVersions.app`のバージョンが一致する
+- 指定したDeveloper ID Application identityが使用できる
+- 指定したNotary Service Keychain profileで履歴を取得できる
+
+同日、配布スクリプト更新後に104件のテスト、production build、
+自己ビルド用アプリバンドルのad-hoc署名検証、`Info.plist`検証を再実行し、
+すべて成功した。

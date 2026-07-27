@@ -29,12 +29,21 @@ Keychain profile first. The release operator then runs:
 ```sh
 export BLUEPRINT_CODESIGN_IDENTITY='Developer ID Application: Example (TEAMID)'
 export BLUEPRINT_NOTARY_PROFILE='blueprint-notary'
+export BLUEPRINT_EXPECTED_VERSION='1.0.0'
+./scripts/release-preflight.sh
 ./scripts/release-app.sh .build/release-artifacts
 ```
 
-The script builds the official origin, enables the hardened runtime, verifies
-the signature, submits to Apple Notary Service, staples the ticket and emits an
-arm64 zip plus SHA-256 file. Credentials are never stored in this repository.
+The preflight requires a clean worktree, matching application versions, an
+available signing identity and a working Notary Service Keychain profile. The
+release script repeats the preflight, builds the official origin, enables the
+hardened runtime, verifies the signature, submits to Apple Notary Service,
+staples the ticket, runs a local Gatekeeper assessment and emits an arm64 zip
+plus SHA-256 file. Credentials are never stored in this repository.
+
+`BLUEPRINT_CODESIGN_IDENTITY` may be the full certificate name or its SHA-1
+identity hash from `security find-identity -v -p codesigning`. Using the hash
+removes ambiguity when certificates with the same display name are present.
 
 ## Verification
 

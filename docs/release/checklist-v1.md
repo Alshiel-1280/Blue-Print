@@ -13,8 +13,10 @@
 - [x] No third-party Swift package dependency
 - [x] License and third-party notices reviewed
 - [x] Self-built and official build origins differ
+- [x] Notary Service Keychain profile validates with `notarytool history`
 - [ ] Developer ID signature verified
 - [ ] Apple notarization and staple verified
+- [ ] Local Gatekeeper assessment passes
 - [ ] Gatekeeper assessment passes on a second Mac
 
 ## Publication

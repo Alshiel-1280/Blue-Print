@@ -10,16 +10,20 @@ if [ -z "$identity" ] || [ -z "$notary_profile" ]; then
     exit 2
 fi
 
+./scripts/release-preflight.sh
+
 ./scripts/package-app.sh release "$output_root" official
 app_path="$output_root/BluePrint.app"
 codesign --force --options runtime --timestamp --sign "$identity" "$app_path"
 codesign --verify --deep --strict --verbose=2 "$app_path"
+codesign -dvv "$app_path"
 
 submission_zip="$output_root/BluePrint-notary-submission.zip"
 ditto -c -k --keepParent "$app_path" "$submission_zip"
 xcrun notarytool submit "$submission_zip" --keychain-profile "$notary_profile" --wait
 xcrun stapler staple "$app_path"
 xcrun stapler validate "$app_path"
+spctl --assess --type execute --verbose=2 "$app_path"
 
 release_zip="$output_root/BluePrint-macOS-arm64.zip"
 ditto -c -k --keepParent "$app_path" "$release_zip"
