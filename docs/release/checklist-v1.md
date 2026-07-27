@@ -2,7 +2,7 @@
 
 ## Product and data
 
-- [x] 106 automated tests pass
+- [x] 107 automated tests pass
 - [x] 100,000 journal-line / 20,000 evidence benchmark passes
 - [x] Backup and restore rehearsal matches counts, balances and evidence hashes
 - [x] Accessibility and option-2 design QA recorded

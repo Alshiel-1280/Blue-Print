@@ -202,7 +202,6 @@ public final class BlueprintDatabase: @unchecked Sendable {
     }
 
     let yearScopedTables = [
-      "closing_inventories",
       "e_tax_exports",
       "filing_deductions",
       "filing_properties",
@@ -227,9 +226,7 @@ public final class BlueprintDatabase: @unchecked Sendable {
     }
 
     let unscopedDataTables = [
-      "accrual_templates",
       "evidence_documents",
-      "household_allocation_rules",
       "import_batches",
       "imported_transactions",
       "yayoi_migration_batches",
@@ -238,6 +235,14 @@ public final class BlueprintDatabase: @unchecked Sendable {
       if (try connection.scalarInt("SELECT COUNT(*) FROM \(table)") ?? 0) > 0 {
         return false
       }
+    }
+
+    if let inventory = try closing.inventory(fiscalYearID: id),
+      inventory.openingInventory.yen != 0
+        || inventory.purchases.yen != 0
+        || inventory.closingInventory.yen != 0
+    {
+      return false
     }
 
     if let workspace = try filing.workspace(fiscalYearID: id),

@@ -1,4 +1,5 @@
 import BlueprintAudit
+import BlueprintClosing
 import BlueprintDomain
 import BlueprintFiling
 import XCTest
@@ -81,6 +82,23 @@ final class PersistenceTests: XCTestCase {
         metadata: EntityMetadata(createdAt: now),
         fiscalYearID: setup.fiscalYear.id
       ))
+    let accounts = try database.accounts.fetchAll(includeInactive: false)
+    try database.closing.saveHouseholdRule(
+      HouseholdAllocationRule(
+        name: "家事按分",
+        expenseAccountID: accounts[0].id,
+        ownerDrawingsAccountID: accounts[8].id,
+        personalBasisPoints: 3_000,
+        rationale: "設定済み"
+      ))
+    try database.closing.saveInventory(
+      InventoryClosing(
+        openingInventory: .zero,
+        purchases: .zero,
+        closingInventory: .zero
+      ),
+      fiscalYearID: setup.fiscalYear.id
+    )
 
     XCTAssertTrue(try database.canRetargetFiscalYear(id: setup.fiscalYear.id))
     try database.retargetFiscalYear(
@@ -132,6 +150,22 @@ final class PersistenceTests: XCTestCase {
       try database.fiscalYears.fetch(id: setup.fiscalYear.id)?.calendarYear,
       2026
     )
+  }
+
+  func testFiscalYearWithNonzeroInventoryCannotBeRetargeted() throws {
+    let database = try BlueprintDatabase(databaseURL: databaseURL)
+    let setup = try makeSetup()
+    try database.createInitialSetup(profile: setup.profile, fiscalYear: setup.fiscalYear, at: now)
+    try database.closing.saveInventory(
+      InventoryClosing(
+        openingInventory: Money(yen: 10_000),
+        purchases: .zero,
+        closingInventory: .zero
+      ),
+      fiscalYearID: setup.fiscalYear.id
+    )
+
+    XCTAssertFalse(try database.canRetargetFiscalYear(id: setup.fiscalYear.id))
   }
 
   func testAccountCannotBePhysicallyDeletedAndDeactivationIsAudited() throws {
