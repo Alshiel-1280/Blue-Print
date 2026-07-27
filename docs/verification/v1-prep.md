@@ -23,8 +23,9 @@
 
 ## 外部ゲート
 
-e-Tax WEB実地読込は完了した。次の配布ゲートが未完了のため、
-アプリ版は0.9.0のままとし、`v1.0.0`タグを作成しない。
+e-Tax WEB実地読込は完了した。署名対象を固定するためアプリ版を
+1.0.0（build 10）へ更新したが、次の配布ゲートが完了するまでは
+`v1.0.0`タグとGitHub Releaseを作成しない。
 
 1. Developer ID署名、Apple公証、公式バイナリとチェックサムの公開を完了する。
 
@@ -86,3 +87,16 @@ ad-hoc署名と`Info.plist`検証が成功した。
 再パッケージして起動し、2025年選択後に年度修正ボタンが有効になることを
 アクセシビリティツリーで確認した。確定操作は行っていない。
 追加後は全107件のテストが成功した。
+
+## v1.0.0署名候補
+
+2026-07-28、署名対象をアプリ版1.0.0、build 10へ更新した。
+
+- `plutil -lint Resources/Info.plist`: 成功
+- `swift format lint --recursive --strict Sources Tests Package.swift`: 成功
+- `swift test`: 107件成功、失敗0件
+- `swift build -c release`: 成功
+- `git diff --check`: 成功
+
+Developer ID署名、公証、staple、Gatekeeper検証は、この候補をcommitして
+worktreeをクリーンにした後に実行する。

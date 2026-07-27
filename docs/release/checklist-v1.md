@@ -21,7 +21,7 @@
 
 ## Publication
 
-- [ ] Change app version and build number to 1.0.0
+- [x] Change app version and build number to 1.0.0
 - [ ] Commit the final release note
 - [ ] Create annotated `v1.0.0` tag from the verified commit
 - [ ] Upload notarized arm64 zip and SHA-256 to GitHub Releases
