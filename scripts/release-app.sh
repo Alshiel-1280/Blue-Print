@@ -27,5 +27,10 @@ spctl --assess --type execute --verbose=2 "$app_path"
 
 release_zip="$output_root/BluePrint-macOS-arm64.zip"
 ditto -c -k --keepParent "$app_path" "$release_zip"
-shasum -a 256 "$release_zip" > "$release_zip.sha256"
+release_directory=$(dirname "$release_zip")
+release_name=$(basename "$release_zip")
+(
+    cd "$release_directory"
+    shasum -a 256 "$release_name" > "$release_name.sha256"
+)
 echo "$release_zip"
