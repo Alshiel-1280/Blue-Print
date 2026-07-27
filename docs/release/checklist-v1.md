@@ -6,7 +6,7 @@
 - [x] 100,000 journal-line / 20,000 evidence benchmark passes
 - [x] Backup and restore rehearsal matches counts, balances and evidence hashes
 - [x] Accessibility and option-2 design QA recorded
-- [ ] e-Tax WEB 2025 import accepted
+- [x] e-Tax WEB 2025 import accepted
 
 ## Supply chain
 
