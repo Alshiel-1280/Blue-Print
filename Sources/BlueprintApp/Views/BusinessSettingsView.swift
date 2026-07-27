@@ -1,9 +1,11 @@
 import BlueprintDomain
+import BlueprintTax
 import SwiftUI
 
 struct BusinessSettingsView: View {
   @ObservedObject var model: AppModel
   @State private var draft: BusinessProfile?
+  @State private var calendarYear = OfficialRules2025.latestSupportedYear
   @State private var showingLockConfirmation = false
   @State private var reopenReason = ""
 
@@ -21,6 +23,31 @@ struct BusinessSettingsView: View {
           Form {
             Section("年度制御") {
               LabeledContent("状態", value: model.fiscalYear?.status.localizedName ?? "未設定")
+              Picker("申告年度", selection: $calendarYear) {
+                if let currentYear = model.fiscalYear?.calendarYear,
+                  !OfficialRules2025.supportedYears.contains(currentYear)
+                {
+                  Text("\(currentYear)年（e-Tax未対応）").tag(currentYear)
+                }
+                ForEach(OfficialRules2025.supportedYears, id: \.self) { year in
+                  Text("\(year)年").tag(year)
+                }
+              }
+              if calendarYear != model.fiscalYear?.calendarYear {
+                Button("申告年度を\(calendarYear)年へ修正") {
+                  model.changeFiscalYear(to: calendarYear)
+                }
+                .disabled(!model.canChangeFiscalYear)
+              }
+              if model.canChangeFiscalYear {
+                Text("年度データがまだないため、申告年度と税務・e-Taxルールを安全に修正できます。")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("仕訳、証憑、請求、申告資料などがある年度は変更できません。")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
               if model.fiscalYear?.status == .locked {
                 TextField("再オープン理由", text: $reopenReason)
                 Button("理由を記録して再オープン") {
@@ -94,8 +121,14 @@ struct BusinessSettingsView: View {
       .padding(24)
       .frame(maxWidth: 820)
     }
-    .onAppear { draft = model.profile }
+    .onAppear {
+      draft = model.profile
+      calendarYear = model.fiscalYear?.calendarYear ?? OfficialRules2025.latestSupportedYear
+    }
     .onChange(of: model.profile) { _, newValue in draft = newValue }
+    .onChange(of: model.fiscalYear) { _, newValue in
+      calendarYear = newValue?.calendarYear ?? OfficialRules2025.latestSupportedYear
+    }
     .confirmationDialog(
       "年度をロックしますか？",
       isPresented: $showingLockConfirmation

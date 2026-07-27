@@ -5,6 +5,7 @@ public enum RepositoryError: Error, Equatable, Sendable {
   case duplicate(String)
   case physicalDeletionForbidden
   case fiscalYearLocked
+  case fiscalYearContainsData
   case invalidData(String)
 }
 

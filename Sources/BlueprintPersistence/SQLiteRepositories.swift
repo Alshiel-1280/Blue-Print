@@ -110,6 +110,29 @@ public final class SQLiteFiscalYearRepository: FiscalYearRepository, @unchecked 
     try connection.query("SELECT * FROM fiscal_years ORDER BY calendar_year DESC").map(
       FiscalYear.init(row:))
   }
+
+  public func retarget(
+    id: EntityID,
+    calendarYear: Int,
+    taxRuleSetID: String,
+    formRuleSetID: String,
+    updatedAt: Date
+  ) throws {
+    try connection.execute(
+      """
+      UPDATE fiscal_years
+      SET calendar_year = ?, tax_rule_set_id = ?, form_rule_set_id = ?, updated_at = ?
+      WHERE id = ?
+      """,
+      bindings: [
+        .integer(Int64(calendarYear)),
+        .text(taxRuleSetID),
+        .text(formRuleSetID),
+        .real(updatedAt.timeIntervalSince1970),
+        .text(id.databaseString),
+      ]
+    )
+  }
 }
 
 public final class SQLiteAccountRepository: AccountRepository, @unchecked Sendable {

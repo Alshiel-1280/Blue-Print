@@ -217,6 +217,9 @@ public struct RuleCatalog: Equatable, Sendable {
 }
 
 public enum OfficialRules2025 {
+  public static let supportedYears = [2025]
+  public static let latestSupportedYear = 2025
+
   private static let checkedAt = Date(timeIntervalSince1970: 1_784_559_600)
 
   public static let tax = TaxRuleSet(

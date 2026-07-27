@@ -1,5 +1,6 @@
 import BlueprintAudit
 import BlueprintDomain
+import BlueprintFiling
 import XCTest
 
 @testable import BlueprintPersistence
@@ -69,6 +70,68 @@ final class PersistenceTests: XCTestCase {
     let accounts = try database.accounts.fetchAll(includeInactive: true)
     XCTAssertEqual(accounts.count, 25)
     XCTAssertEqual(Set(accounts.map(\.code)).count, 25)
+  }
+
+  func testEmptyFiscalYearCanBeRetargetedWithRulesAndAudit() throws {
+    let database = try BlueprintDatabase(databaseURL: databaseURL)
+    let setup = try makeSetup()
+    try database.createInitialSetup(profile: setup.profile, fiscalYear: setup.fiscalYear, at: now)
+    try database.filing.saveWorkspace(
+      FilingWorkspace(
+        metadata: EntityMetadata(createdAt: now),
+        fiscalYearID: setup.fiscalYear.id
+      ))
+
+    XCTAssertTrue(try database.canRetargetFiscalYear(id: setup.fiscalYear.id))
+    try database.retargetFiscalYear(
+      id: setup.fiscalYear.id,
+      calendarYear: 2025,
+      taxRuleSetID: "tax-2025.1",
+      formRuleSetID: "form-2025.1",
+      at: now.addingTimeInterval(10)
+    )
+
+    let changed = try XCTUnwrap(database.fiscalYears.fetch(id: setup.fiscalYear.id))
+    XCTAssertEqual(changed.calendarYear, 2025)
+    XCTAssertEqual(changed.taxRuleSetID, "tax-2025.1")
+    XCTAssertEqual(changed.formRuleSetID, "form-2025.1")
+    let event = try XCTUnwrap(
+      database.auditEvents.fetch(
+        targetType: "FiscalYear", targetID: setup.fiscalYear.id.uuidString.lowercased()
+      ).last
+    )
+    XCTAssertEqual(event.action, .updated)
+    XCTAssertTrue(event.reason?.contains("2026 -> 2025") == true)
+  }
+
+  func testFiscalYearWithJournalCannotBeRetargeted() throws {
+    let database = try BlueprintDatabase(databaseURL: databaseURL)
+    let setup = try makeSetup()
+    try database.createInitialSetup(profile: setup.profile, fiscalYear: setup.fiscalYear, at: now)
+    let accounts = try database.accounts.fetchAll(includeInactive: false)
+    let entry = try makeJournal(
+      fiscalYearID: setup.fiscalYear.id,
+      debitAccountID: accounts[0].id,
+      creditAccountID: accounts[8].id
+    )
+    try database.saveJournalDraft(entry, at: now)
+
+    XCTAssertFalse(try database.canRetargetFiscalYear(id: setup.fiscalYear.id))
+    XCTAssertThrowsError(
+      try database.retargetFiscalYear(
+        id: setup.fiscalYear.id,
+        calendarYear: 2025,
+        taxRuleSetID: "tax-2025.1",
+        formRuleSetID: "form-2025.1",
+        at: now.addingTimeInterval(10)
+      )
+    ) { error in
+      XCTAssertEqual(error as? RepositoryError, .fiscalYearContainsData)
+    }
+    XCTAssertEqual(
+      try database.fiscalYears.fetch(id: setup.fiscalYear.id)?.calendarYear,
+      2026
+    )
   }
 
   func testAccountCannotBePhysicallyDeletedAndDeactivationIsAudited() throws {

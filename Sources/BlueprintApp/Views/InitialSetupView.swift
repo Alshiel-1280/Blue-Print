@@ -7,7 +7,7 @@ struct InitialSetupView: View {
 
   @State private var ownerName = ""
   @State private var tradeName = ""
-  @State private var calendarYear = Calendar.current.component(.year, from: Date())
+  @State private var calendarYear = OfficialRules2025.latestSupportedYear
   @State private var consumptionTaxStatus = ConsumptionTaxStatus.exempt
   @State private var invoiceStatus = InvoiceRegistrationStatus.unknown
   @State private var bookkeepingStyle = BookkeepingStyle.doubleEntry

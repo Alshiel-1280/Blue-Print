@@ -196,6 +196,103 @@ public final class BlueprintDatabase: @unchecked Sendable {
     }
   }
 
+  public func canRetargetFiscalYear(id: EntityID) throws -> Bool {
+    guard let fiscalYear = try fiscalYears.fetch(id: id), fiscalYear.status == .open else {
+      return false
+    }
+
+    let yearScopedTables = [
+      "closing_inventories",
+      "e_tax_exports",
+      "filing_deductions",
+      "filing_properties",
+      "fixed_assets",
+      "invoices",
+      "journal_entries",
+      "other_income_entries",
+      "rental_ledger_entries",
+      "securities_annual_reports",
+      "stock_loss_carryforwards",
+      "unsupported_filing_cases",
+      "vendor_bills",
+      "wage_statements",
+    ]
+    for table in yearScopedTables {
+      let count =
+        try connection.scalarInt(
+          "SELECT COUNT(*) FROM \(table) WHERE fiscal_year_id = ?",
+          bindings: [.text(id.uuidString.lowercased())]
+        ) ?? 0
+      if count > 0 { return false }
+    }
+
+    let unscopedDataTables = [
+      "accrual_templates",
+      "evidence_documents",
+      "household_allocation_rules",
+      "import_batches",
+      "imported_transactions",
+      "yayoi_migration_batches",
+    ]
+    for table in unscopedDataTables {
+      if (try connection.scalarInt("SELECT COUNT(*) FROM \(table)") ?? 0) > 0 {
+        return false
+      }
+    }
+
+    if let workspace = try filing.workspace(fiscalYearID: id),
+      !workspace.attachments.isEmpty || !workspace.reviewItems.isEmpty
+    {
+      return false
+    }
+    return true
+  }
+
+  public func retargetFiscalYear(
+    id: EntityID,
+    calendarYear: Int,
+    taxRuleSetID: String,
+    formRuleSetID: String,
+    at date: Date
+  ) throws {
+    guard (2000...2100).contains(calendarYear) else {
+      throw FiscalYearError.unsupportedCalendarYear(calendarYear)
+    }
+    try connection.transaction {
+      guard let fiscalYear = try fiscalYears.fetch(id: id) else {
+        throw RepositoryError.notFound
+      }
+      guard fiscalYear.status == .open else {
+        throw RepositoryError.fiscalYearLocked
+      }
+      guard try canRetargetFiscalYear(id: id) else {
+        throw RepositoryError.fiscalYearContainsData
+      }
+      if let duplicate = try fiscalYears.fetch(calendarYear: calendarYear), duplicate.id != id {
+        throw RepositoryError.duplicate("Fiscal year \(calendarYear)")
+      }
+
+      try fiscalYears.retarget(
+        id: id,
+        calendarYear: calendarYear,
+        taxRuleSetID: taxRuleSetID,
+        formRuleSetID: formRuleSetID,
+        updatedAt: date
+      )
+      try auditEvents.append(
+        AuditEvent(
+          occurredAt: date,
+          actorKind: .localUser,
+          action: .updated,
+          targetType: "FiscalYear",
+          targetID: id.uuidString.lowercased(),
+          reason:
+            "calendar-year: \(fiscalYear.calendarYear) -> \(calendarYear); rules: \(taxRuleSetID), \(formRuleSetID)"
+        )
+      )
+    }
+  }
+
   public func saveJournalDraft(_ entry: JournalEntry, at date: Date) throws {
     try connection.transaction {
       guard try fiscalYears.fetch(id: entry.fiscalYearID)?.status != .locked else {

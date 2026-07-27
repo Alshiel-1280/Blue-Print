@@ -155,6 +155,29 @@ final class AppModel: ObservableObject {
     }
   }
 
+  var canChangeFiscalYear: Bool {
+    guard let database, let fiscalYear else { return false }
+    return (try? database.canRetargetFiscalYear(id: fiscalYear.id)) == true
+  }
+
+  func changeFiscalYear(to calendarYear: Int) {
+    guard let database, let fiscalYear else { return }
+    do {
+      let rules = try OfficialRules2025.catalog.rules(for: calendarYear)
+      try database.retargetFiscalYear(
+        id: fiscalYear.id,
+        calendarYear: calendarYear,
+        taxRuleSetID: rules.0.id,
+        formRuleSetID: rules.1.id,
+        at: clock.now()
+      )
+      errorMessage = nil
+      try reload()
+    } catch {
+      errorMessage = Self.userFacingMessage(for: error)
+    }
+  }
+
   func saveAccount(_ account: Account) {
     guard let database else { return }
     do {
@@ -1570,6 +1593,8 @@ final class AppModel: ObservableObject {
       "取消・訂正の理由を入力してください。"
     case RepositoryError.fiscalYearLocked:
       "この年度はロックされています。理由を記録して再オープンしてから操作してください。"
+    case RepositoryError.fiscalYearContainsData:
+      "仕訳、証憑、請求、申告資料などの年度データがあるため申告年度を変更できません。バックアップ後に新しい年度を作成してください。"
     case EvidenceError.exactDuplicate:
       "同じ原本が既に取り込まれています。受信箱の既存証憑を確認してください。"
     case EvidenceError.originalMutationForbidden:
