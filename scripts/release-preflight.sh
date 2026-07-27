@@ -19,7 +19,7 @@ for command in codesign git plutil security swift xcrun; do
     fi
 done
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
+if [ -n "$(git status --porcelain)" ]; then
     echo "release must start from a clean Git worktree" >&2
     exit 1
 fi
