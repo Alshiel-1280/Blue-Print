@@ -14,15 +14,15 @@
 - [x] License and third-party notices reviewed
 - [x] Self-built and official build origins differ
 - [x] Notary Service Keychain profile validates with `notarytool history`
-- [ ] Developer ID signature verified
-- [ ] Apple notarization and staple verified
-- [ ] Local Gatekeeper assessment passes
-- [ ] Gatekeeper assessment passes on a second Mac
+- [x] Developer ID signature verified
+- [x] Apple notarization and staple verified
+- [x] Local Gatekeeper assessment passes
+- [x] Gatekeeper assessment passes on a second Mac
 
 ## Publication
 
 - [x] Change app version and build number to 1.0.0
-- [ ] Commit the final release note
+- [x] Commit the final release note
 - [ ] Create annotated `v1.0.0` tag from the verified commit
 - [ ] Upload notarized arm64 zip and SHA-256 to GitHub Releases
 - [ ] Confirm source archives and release assets are publicly downloadable

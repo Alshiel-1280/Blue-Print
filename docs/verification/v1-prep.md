@@ -1,6 +1,6 @@
 # v1準備検証記録
 
-実施日: 2026-07-22（最終更新: 2026-07-28）
+実施日: 2026-07-22（最終更新: 2026-07-29）
 
 ## 自動検証
 
@@ -23,11 +23,9 @@
 
 ## 外部ゲート
 
-e-Tax WEB実地読込は完了した。署名対象を固定するためアプリ版を
-1.0.0（build 10）へ更新したが、次の配布ゲートが完了するまでは
-`v1.0.0`タグとGitHub Releaseを作成しない。
-
-1. Developer ID署名、Apple公証、公式バイナリとチェックサムの公開を完了する。
+e-Tax WEB実地読込、Developer ID署名、Apple公証、staple、ローカルおよび
+別MacのGatekeeper確認が完了した。アプリ版は1.0.0（build 10）。
+残作業は`v1.0.0`タグとGitHub Releaseの公開確認である。
 
 ### e-Tax WEB実地読込
 
@@ -100,3 +98,23 @@ ad-hoc署名と`Info.plist`検証が成功した。
 
 Developer ID署名、公証、staple、Gatekeeper検証は、この候補をcommitして
 worktreeをクリーンにした後に実行する。
+
+## v1.0.0配布検証
+
+2026-07-28から29日に、commit `c3f2223`から公式成果物を生成した。
+
+- Developer ID Application署名、Hardened Runtime、secure timestamp: 成功
+- Apple Notary Service submission `11edf830-20c8-4fb3-9e97-ea9b3dd54368`:
+  `Accepted`
+- `stapler staple`および`stapler validate`: 成功
+- ローカルGatekeeper: `accepted`、`source=Notarized Developer ID`
+- ZIPを別ディレクトリへ展開した後の署名、ticket、Gatekeeper: 成功
+- `CFBundleShortVersionString`: 1.0.0
+- `CFBundleVersion`: 10
+- 配布ZIP SHA-256:
+  `90b492fed3b54713805e3a934b636529642add983f5d04d5013e6ccc6c7c89ad`
+- 別MacへZIPとチェックサムを移し、利用者が通常起動できることを確認
+
+e-Tax WEB版のPDF表示は長時間完了しなかったためスキップした。XTXの読込と
+帳票展開は合格とするが、PDF内容の実地照合は未完了としてリリースノートへ
+明記した。
