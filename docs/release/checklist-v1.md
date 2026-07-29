@@ -23,9 +23,9 @@
 
 - [x] Change app version and build number to 1.0.0
 - [x] Commit the final release note
-- [ ] Create annotated `v1.0.0` tag from the verified commit
-- [ ] Upload notarized arm64 zip and SHA-256 to GitHub Releases
-- [ ] Confirm source archives and release assets are publicly downloadable
-- [ ] Verify tag, app version and release title are identical
+- [x] Create annotated `v1.0.0` tag from the verified commit
+- [x] Upload notarized arm64 zip and SHA-256 to GitHub Releases
+- [x] Confirm source archives and release assets are publicly downloadable
+- [x] Verify tag, app version and release title are identical
 
 Do not check an external gate based only on a script or local unit test.

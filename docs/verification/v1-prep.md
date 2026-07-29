@@ -25,7 +25,7 @@
 
 e-Tax WEB実地読込、Developer ID署名、Apple公証、staple、ローカルおよび
 別MacのGatekeeper確認が完了した。アプリ版は1.0.0（build 10）。
-残作業は`v1.0.0`タグとGitHub Releaseの公開確認である。
+`v1.0.0`タグとGitHub Releaseの公開確認まで完了した。
 
 ### e-Tax WEB実地読込
 
@@ -118,3 +118,18 @@ worktreeをクリーンにした後に実行する。
 e-Tax WEB版のPDF表示は長時間完了しなかったためスキップした。XTXの読込と
 帳票展開は合格とするが、PDF内容の実地照合は未完了としてリリースノートへ
 明記した。
+
+## v1.0.0公開確認
+
+2026-07-29、次を確認した。
+
+- 注釈付き`v1.0.0`タグはcommit `7b82445`を指す
+- GitHub Release名は`Blue-Print 1.0.0`
+- Releaseは非ドラフト、非プレリリース
+- 公証済みZIPとSHA-256ファイルは公開URLから認証なしで取得可能
+- 公開URLから再取得したZIPのSHA-256はリリースノートと一致
+- 公開ZIPを展開後、署名、stapled ticket、Gatekeeperを再検証
+- 公開ZIPのアプリ版は1.0.0、build 10
+
+公開先:
+<https://github.com/Alshiel-1280/Blue-Print/releases/tag/v1.0.0>
