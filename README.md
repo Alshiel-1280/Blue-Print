@@ -7,9 +7,16 @@ Blue-Print は、日本の個人事業主が Mac 上で記帳から青色申告�
 
 ## 現在のマイルストーン
 
-`v1.0.0` — 初回安定版。記帳、証憑、請求・支払、決算、申告、弥生移行、暗号化バックアップをローカルファーストで提供します。
+`v2.0.0` — v1と互換性を持たない新しい保存世代です。作業中心UI、正規化SQLite、
+署名付き年度ルール、永続ジョブ、診断・修復プレビュー、Argon2id暗号化バックアップ、
+App Sandboxを提供します。v1データは検出・読込・コピー・削除しません。
 
-実装順と完了条件は [plan.md](./plan.md)、要求の基準は [要件定義書.md](./要件定義書.md)、配布物と既知の制限は [v1.0.0リリースノート](./docs/release/v1.0.0.md) を参照してください。
+2026年は記帳・消費税・決算に対応します。2026年の申告書とXTXは、最終様式、
+e-Tax仕様、e-Tax WEB実読込、PDF全項目照合が完了するまで無効です。
+
+実装順と完了条件は [plan.md](./plan.md)、v2の保存境界は
+[v2 storage specification](./docs/specs/v2-storage.md)、制限は
+[v2.0.0リリースノート](./docs/release/v2.0.0.md) を参照してください。
 
 ## 必要環境
 
@@ -54,11 +61,15 @@ swift run BluePrint
 
 ## データ保存
 
-既定では `~/Library/Application Support/BluePrint/` に DB、証憑索引、バックアップを分離して保存します。詳細は [ADR-004](./docs/adr/ADR-004-storage-layout.md) を参照してください。
+v2はSandboxコンテナ内の `Application Support/BluePrint-v2/` にDB、証憑、
+ルール、ジョブ、バックアップを分離して保存します。v1の
+`Application Support/BluePrint/` は変更しません。詳細は
+[ADR-004](./docs/adr/ADR-004-storage-layout.md) を参照してください。
 
 ## ライセンス
 
-Apache License 2.0。詳細は [LICENSE](./LICENSE)、システムフレームワークを含む確認結果は [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) を参照してください。外部Swiftパッケージ依存はありません。
+Apache License 2.0。詳細は [LICENSE](./LICENSE)、同梱するArgon2公式C実装を含む
+確認結果は [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) を参照してください。
 
 ## セキュリティ
 

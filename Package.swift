@@ -23,9 +23,20 @@ let package = Package(
     .library(name: "BlueprintPerformance", targets: ["BlueprintPerformance"]),
     .executable(name: "BluePrint", targets: ["BlueprintApp"]),
     .executable(name: "blueprint-benchmark", targets: ["BlueprintBenchmark"]),
+    .executable(name: "blueprint-rule-tool", targets: ["BlueprintRuleTool"]),
   ],
   targets: [
     .systemLibrary(name: "CSQLite"),
+    .target(
+      name: "CArgon2",
+      path: "Vendor/argon2",
+      exclude: ["LICENSE"],
+      publicHeadersPath: "include",
+      cSettings: [
+        .headerSearchPath("src"),
+        .headerSearchPath("src/blake2"),
+      ]
+    ),
     .target(
       name: "BlueprintDomain",
       swiftSettings: [
@@ -60,7 +71,10 @@ let package = Package(
     ),
     .target(
       name: "BlueprintTax",
-      dependencies: ["BlueprintDomain", "BlueprintClosing", "BlueprintFiling"]
+      dependencies: ["BlueprintDomain", "BlueprintClosing", "BlueprintFiling"],
+      resources: [
+        .copy("Resources/RulePackages")
+      ]
     ),
     .target(
       name: "BlueprintETax",
@@ -76,7 +90,7 @@ let package = Package(
         "BlueprintDomain", "BlueprintAudit", "BlueprintSharedCapture", "BlueprintDocuments",
         "BlueprintImports", "BlueprintBilling", "BlueprintClosing", "BlueprintFiling",
         "BlueprintTax",
-        "BlueprintETax", "BlueprintTransfer", "CSQLite",
+        "BlueprintETax", "BlueprintTransfer", "CSQLite", "CArgon2",
       ]
     ),
     .target(
@@ -89,6 +103,10 @@ let package = Package(
     .executableTarget(
       name: "BlueprintBenchmark",
       dependencies: ["BlueprintPerformance"]
+    ),
+    .executableTarget(
+      name: "BlueprintRuleTool",
+      linkerSettings: [.linkedFramework("Security")]
     ),
     .executableTarget(
       name: "BlueprintApp",

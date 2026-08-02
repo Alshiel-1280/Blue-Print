@@ -29,7 +29,8 @@ Keychain profile first. The release operator then runs:
 ```sh
 export BLUEPRINT_CODESIGN_IDENTITY='Developer ID Application: Example (TEAMID)'
 export BLUEPRINT_NOTARY_PROFILE='blueprint-notary'
-export BLUEPRINT_EXPECTED_VERSION='1.0.0'
+export BLUEPRINT_EXPECTED_VERSION='2.0.0'
+export BLUEPRINT_RELEASE_DOWNLOAD_URL='https://github.com/Alshiel-1280/Blue-Print/releases/download/v2.0.0/BluePrint-v2.0.0-macOS-AppleSilicon.dmg'
 ./scripts/release-preflight.sh
 ./scripts/release-app.sh .build/release-artifacts
 ```
@@ -38,8 +39,10 @@ The preflight requires a clean worktree, matching application versions, an
 available signing identity and a working Notary Service Keychain profile. The
 release script repeats the preflight, builds the official origin, enables the
 hardened runtime, verifies the signature, submits to Apple Notary Service,
-staples the ticket, runs a local Gatekeeper assessment and emits an arm64 zip
-plus SHA-256 file. Credentials are never stored in this repository.
+signs the DMG container, submits the DMG to Apple Notary Service, staples the
+ticket, verifies both the DMG and app with Gatekeeper, and emits the Apple
+Silicon DMG, SHA-256 file, and Ed25519-signed `update-manifest.json`.
+Credentials and the Ed25519 private key are never stored in this repository.
 
 `BLUEPRINT_CODESIGN_IDENTITY` may be the full certificate name or its SHA-1
 identity hash from `security find-identity -v -p codesigning`. Using the hash
@@ -49,14 +52,19 @@ removes ambiguity when certificates with the same display name are present.
 
 ```sh
 codesign --verify --deep --strict --verbose=2 BluePrint.app
+codesign -d --entitlements :- BluePrint.app
+codesign --verify --verbose=2 BluePrint-v2.0.0-macOS-AppleSilicon.dmg
+xcrun stapler validate BluePrint-v2.0.0-macOS-AppleSilicon.dmg
+spctl --assess --type open --context context:primary-signature --verbose=2 \
+  BluePrint-v2.0.0-macOS-AppleSilicon.dmg
 spctl --assess --type execute --verbose=2 BluePrint.app
-xcrun stapler validate BluePrint.app
-shasum -a 256 -c BluePrint-macOS-arm64.zip.sha256
+shasum -a 256 -c BluePrint-v2.0.0-macOS-AppleSilicon.dmg.sha256
 ```
 
 ## Data and rule compatibility
 
-Application, DB schema, portable data format, tax rules and form rules have
-independent versions in `BlueprintVersions`. A patch release must not introduce
-a destructive schema change. See [new tax year](docs/maintenance/new-tax-year.md)
-for the additive annual update process.
+The v2 app, storage generation, schema, backup family, capture contract, tax
+rules and form rules are independently versioned. `BlueprintLegacyVersions`
+exists only for the explicit v1 restore reader and retained v1 fixtures. See
+[new tax year](docs/maintenance/new-tax-year.md) and
+[the `.bprules` specification](docs/specs/bprules.md).

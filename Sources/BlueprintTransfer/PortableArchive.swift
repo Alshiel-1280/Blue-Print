@@ -155,6 +155,139 @@ public struct EncryptedBackupEnvelope: Codable, Equatable, Sendable {
   }
 }
 
+public struct Argon2idParameters: Codable, Equatable, Sendable {
+  public var version: Int
+  public var memoryKiB: Int
+  public var iterations: Int
+  public var parallelism: Int
+  public var outputBytes: Int
+  public var saltBase64: String
+
+  public init(
+    version: Int = 19,
+    memoryKiB: Int,
+    iterations: Int,
+    parallelism: Int,
+    outputBytes: Int,
+    saltBase64: String
+  ) {
+    self.version = version
+    self.memoryKiB = memoryKiB
+    self.iterations = iterations
+    self.parallelism = parallelism
+    self.outputBytes = outputBytes
+    self.saltBase64 = saltBase64
+  }
+}
+
+public struct BackupEnvelopeV9: Codable, Equatable, Sendable {
+  public var formatName: String
+  public var formatVersion: Int
+  public var formatFamily: String
+  public var encryption: String
+  public var keyDerivation: String
+  public var kdf: Argon2idParameters
+  public var sealedDataBase64: String
+
+  public init(
+    formatName: String = "blueprint-encrypted-backup",
+    formatVersion: Int = 9,
+    formatFamily: String = "blueprint-v1",
+    encryption: String = "AES-256-GCM",
+    keyDerivation: String = "Argon2id-v19",
+    kdf: Argon2idParameters,
+    sealedDataBase64: String
+  ) {
+    self.formatName = formatName
+    self.formatVersion = formatVersion
+    self.formatFamily = formatFamily
+    self.encryption = encryption
+    self.keyDerivation = keyDerivation
+    self.kdf = kdf
+    self.sealedDataBase64 = sealedDataBase64
+  }
+}
+
+public enum EncryptedBackupKind: Equatable, Sendable {
+  case currentV9
+  case legacyV8
+}
+
+public struct V2BackupFile: Codable, Equatable, Sendable {
+  public let relativePath: String
+  public let sha256: String
+  public let byteCount: Int64
+  public let dataBase64: String
+
+  public init(
+    relativePath: String,
+    sha256: String,
+    byteCount: Int64,
+    dataBase64: String
+  ) {
+    self.relativePath = relativePath
+    self.sha256 = sha256
+    self.byteCount = byteCount
+    self.dataBase64 = dataBase64
+  }
+}
+
+public struct V2BackupPayload: Codable, Equatable, Sendable {
+  public let storageGeneration: Int
+  public let databaseSchemaVersion: Int
+  public let createdAt: Date
+  public let databaseSHA256: String
+  public let databaseBase64: String
+  public let evidenceFiles: [V2BackupFile]
+
+  public init(
+    storageGeneration: Int = 2,
+    databaseSchemaVersion: Int = 1,
+    createdAt: Date,
+    databaseSHA256: String,
+    databaseBase64: String,
+    evidenceFiles: [V2BackupFile]
+  ) {
+    self.storageGeneration = storageGeneration
+    self.databaseSchemaVersion = databaseSchemaVersion
+    self.createdAt = createdAt
+    self.databaseSHA256 = databaseSHA256
+    self.databaseBase64 = databaseBase64
+    self.evidenceFiles = evidenceFiles
+  }
+}
+
+public struct BackupEnvelopeV2: Codable, Equatable, Sendable {
+  public let formatName: String
+  public let formatFamily: String
+  public let formatVersion: Int
+  public let storageGeneration: Int
+  public let encryption: String
+  public let keyDerivation: String
+  public let kdf: Argon2idParameters
+  public let sealedDataBase64: String
+
+  public init(
+    formatName: String = "blueprint-v2-encrypted-backup",
+    formatFamily: String = "blueprint-v2",
+    formatVersion: Int = 1,
+    storageGeneration: Int = 2,
+    encryption: String = "AES-256-GCM",
+    keyDerivation: String = "Argon2id-v19",
+    kdf: Argon2idParameters,
+    sealedDataBase64: String
+  ) {
+    self.formatName = formatName
+    self.formatFamily = formatFamily
+    self.formatVersion = formatVersion
+    self.storageGeneration = storageGeneration
+    self.encryption = encryption
+    self.keyDerivation = keyDerivation
+    self.kdf = kdf
+    self.sealedDataBase64 = sealedDataBase64
+  }
+}
+
 public struct RestorePreview: Codable, Equatable, Sendable {
   public var manifest: TransferManifest
   public var isCompatible: Bool
@@ -172,19 +305,77 @@ public struct DiagnosticFinding: Codable, Equatable, Identifiable, Sendable {
 
   public let id: UUID
   public var severity: Severity
+  public var code: String?
   public var title: String
   public var detail: String
+  public var affectedRecordCount: Int?
+  public var repairKind: String?
 
   public init(
     id: UUID = UUID(),
     severity: Severity,
+    code: String? = nil,
     title: String,
-    detail: String
+    detail: String,
+    affectedRecordCount: Int? = nil,
+    repairKind: String? = nil
   ) {
     self.id = id
     self.severity = severity
+    self.code = code
     self.title = title
     self.detail = detail
+    self.affectedRecordCount = affectedRecordCount
+    self.repairKind = repairKind
+  }
+}
+
+public enum RepairPlanState: String, Codable, Sendable {
+  case previewed
+  case applied
+}
+
+public struct RepairChange: Codable, Equatable, Identifiable, Sendable {
+  public let id: UUID
+  public let kind: String
+  public let summary: String
+  public let affectedRecordCount: Int
+
+  public init(
+    id: UUID = UUID(),
+    kind: String,
+    summary: String,
+    affectedRecordCount: Int
+  ) {
+    self.id = id
+    self.kind = kind
+    self.summary = summary
+    self.affectedRecordCount = affectedRecordCount
+  }
+}
+
+public struct RepairPlan: Codable, Equatable, Identifiable, Sendable {
+  public let id: UUID
+  public let createdAt: Date
+  public let findingIDs: [UUID]
+  public let backupURL: URL
+  public let changes: [RepairChange]
+  public var state: RepairPlanState
+
+  public init(
+    id: UUID = UUID(),
+    createdAt: Date,
+    findingIDs: [UUID],
+    backupURL: URL,
+    changes: [RepairChange],
+    state: RepairPlanState = .previewed
+  ) {
+    self.id = id
+    self.createdAt = createdAt
+    self.findingIDs = findingIDs
+    self.backupURL = backupURL
+    self.changes = changes
+    self.state = state
   }
 }
 

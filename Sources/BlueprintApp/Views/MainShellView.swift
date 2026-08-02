@@ -1,6 +1,9 @@
 import SwiftUI
 
 enum AppDestination: String, CaseIterable, Identifiable {
+  case home
+  case daily
+  case books
   case inbox
   case transactionInput
   case billing
@@ -19,6 +22,9 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
+    case .home: "ホーム"
+    case .daily: "日常処理"
+    case .books: "帳簿"
     case .inbox: "受信箱"
     case .transactionInput: "取引入力"
     case .billing: "請求・支払"
@@ -37,6 +43,9 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
+    case .home: "house"
+    case .daily: "tray.and.arrow.down"
+    case .books: "books.vertical"
     case .inbox: "tray.full"
     case .transactionInput: "square.and.pencil"
     case .billing: "doc.text"
@@ -56,8 +65,14 @@ enum AppDestination: String, CaseIterable, Identifiable {
 
 struct MainShellView: View {
   @ObservedObject var model: AppModel
+  @ObservedObject private var session: AppSessionStore
   @AppStorage("didShowBackupOnboarding") private var didShowBackupOnboarding = false
   @State private var isBackupOnboardingPresented = false
+
+  init(model: AppModel) {
+    self.model = model
+    session = model.session
+  }
 
   var body: some View {
     NavigationSplitView {
@@ -69,16 +84,24 @@ struct MainShellView: View {
           Text(model.fiscalYear.map { "\($0.calendarYear)年" } ?? "年度未設定")
             .font(.caption)
             .foregroundStyle(.secondary)
+          if model.fiscalYear != nil && !model.isFilingSupported {
+            Label("申告出力は未対応", systemImage: "exclamationmark.triangle")
+              .font(.caption2)
+              .foregroundStyle(.orange)
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
 
-        List(selection: $model.selectedDestination) {
-          Section("メイン") {
-            NavigationLink(value: AppDestination.inbox) {
+        List(selection: $session.selectedDestination) {
+          Section("ワークスペース") {
+            NavigationLink(value: AppDestination.home) {
+              Label(AppDestination.home.title, systemImage: AppDestination.home.icon)
+            }
+            NavigationLink(value: AppDestination.daily) {
               HStack {
-                Label(AppDestination.inbox.title, systemImage: AppDestination.inbox.icon)
+                Label(AppDestination.daily.title, systemImage: AppDestination.daily.icon)
                 Spacer()
                 let pending =
                   model.evidenceDocuments.filter { $0.state == .needsReview }.count
@@ -92,23 +115,8 @@ struct MainShellView: View {
                 }
               }
             }
-            NavigationLink(value: AppDestination.transactionInput) {
-              Label(
-                AppDestination.transactionInput.title,
-                systemImage: AppDestination.transactionInput.icon)
-            }
-            NavigationLink(value: AppDestination.billing) {
-              Label(AppDestination.billing.title, systemImage: AppDestination.billing.icon)
-            }
-            NavigationLink(value: AppDestination.journal) {
-              Label(AppDestination.journal.title, systemImage: AppDestination.journal.icon)
-            }
-            NavigationLink(value: AppDestination.ledger) {
-              Label(AppDestination.ledger.title, systemImage: AppDestination.ledger.icon)
-            }
-            NavigationLink(value: AppDestination.trialBalance) {
-              Label(
-                AppDestination.trialBalance.title, systemImage: AppDestination.trialBalance.icon)
+            NavigationLink(value: AppDestination.books) {
+              Label(AppDestination.books.title, systemImage: AppDestination.books.icon)
             }
             NavigationLink(value: AppDestination.closing) {
               Label(AppDestination.closing.title, systemImage: AppDestination.closing.icon)
@@ -116,13 +124,9 @@ struct MainShellView: View {
             NavigationLink(value: AppDestination.filing) {
               Label(AppDestination.filing.title, systemImage: AppDestination.filing.icon)
             }
+            .disabled(!model.isFilingSupported)
           }
-          Section("マスター") {
-            NavigationLink(value: AppDestination.accounts) {
-              Label(AppDestination.accounts.title, systemImage: AppDestination.accounts.icon)
-            }
-          }
-          Section("設定") {
+          Section("ユーティリティ") {
             NavigationLink(value: AppDestination.businessSettings) {
               Label(
                 AppDestination.businessSettings.title,
@@ -161,7 +165,13 @@ struct MainShellView: View {
       }
       .navigationSplitViewColumnWidth(min: 210, ideal: 232, max: 280)
     } detail: {
-      switch model.selectedDestination ?? .inbox {
+      switch session.selectedDestination ?? .home {
+      case .home:
+        HomeDashboardView(model: model)
+      case .daily:
+        DailyWorkspaceView(model: model)
+      case .books:
+        BooksWorkspaceView(model: model)
       case .inbox:
         EvidenceInboxView(model: model)
       case .transactionInput:
@@ -190,7 +200,7 @@ struct MainShellView: View {
         AuditView(model: model)
       }
     }
-    .navigationTitle(model.selectedDestination?.title ?? "Blue-Print")
+    .navigationTitle(session.selectedDestination?.title ?? "Blue-Print")
     .frame(minWidth: 1_040, minHeight: 700)
     .task {
       if !didShowBackupOnboarding { isBackupOnboardingPresented = true }
@@ -199,7 +209,7 @@ struct MainShellView: View {
       BackupOnboardingView {
         didShowBackupOnboarding = true
         isBackupOnboardingPresented = false
-        model.selectedDestination = .dataManagement
+        model.session.selectedDestination = .dataManagement
       } postpone: {
         didShowBackupOnboarding = true
         isBackupOnboardingPresented = false

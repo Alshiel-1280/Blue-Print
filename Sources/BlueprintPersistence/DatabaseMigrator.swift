@@ -30,7 +30,7 @@ public struct FileMigrationBackupHook: MigrationBackupHook {
 }
 
 public struct DatabaseMigrator: Sendable {
-  public static let latestVersion = BlueprintVersions.databaseSchema
+  public static let latestVersion = BlueprintLegacyVersions.databaseSchema
 
   public init() {}
 
@@ -205,10 +205,10 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT INTO version_metadata(key, value) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
-        .text("tax_rule_set_version"), .text(BlueprintVersions.taxRuleSet),
-        .text("form_rule_set_version"), .text(BlueprintVersions.formRuleSet),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
+        .text("tax_rule_set_version"), .text(BlueprintLegacyVersions.taxRuleSet),
+        .text("form_rule_set_version"), .text(BlueprintLegacyVersions.formRuleSet),
       ]
     )
   }
@@ -234,7 +234,7 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?)",
       bindings: [
-        .text("capture_protocol_version"), .text(String(BlueprintVersions.captureProtocol)),
+        .text("capture_protocol_version"), .text(String(BlueprintLegacyVersions.captureProtocol)),
       ]
     )
   }
@@ -312,8 +312,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }
@@ -440,8 +440,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }
@@ -519,8 +519,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }
@@ -573,8 +573,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }
@@ -609,8 +609,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }
@@ -644,10 +644,10 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
-        .text("tax_rule_set_version"), .text(BlueprintVersions.taxRuleSet),
-        .text("form_rule_set_version"), .text(BlueprintVersions.formRuleSet),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
+        .text("tax_rule_set_version"), .text(BlueprintLegacyVersions.taxRuleSet),
+        .text("form_rule_set_version"), .text(BlueprintLegacyVersions.formRuleSet),
       ]
     )
   }
@@ -683,8 +683,8 @@ public struct DatabaseMigrator: Sendable {
     try connection.execute(
       "INSERT OR REPLACE INTO version_metadata(key, value) VALUES (?, ?), (?, ?)",
       bindings: [
-        .text("app_version"), .text(BlueprintVersions.app),
-        .text("data_format_version"), .text(String(BlueprintVersions.dataFormat)),
+        .text("app_version"), .text(BlueprintLegacyVersions.app),
+        .text("data_format_version"), .text(String(BlueprintLegacyVersions.dataFormat)),
       ]
     )
   }

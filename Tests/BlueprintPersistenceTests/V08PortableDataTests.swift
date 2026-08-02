@@ -1,6 +1,7 @@
 import BlueprintDocuments
 import BlueprintDomain
 import BlueprintTransfer
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -51,14 +52,92 @@ final class V08PortableDataTests: XCTestCase {
     let context = try configuredDatabase()
     let service = PortableDataService(connection: context.database.connection, root: root)
     let backup = try service.makeEncryptedBackup(passphrase: "correct horse", createdAt: now)
+    XCTAssertEqual(service.encryptedBackupKind(backup), .currentV9)
+    let envelope = try JSONDecoder().decode(BackupEnvelopeV9.self, from: backup)
+    XCTAssertEqual(envelope.formatVersion, 9)
+    XCTAssertEqual(envelope.kdf.version, 19)
+    XCTAssertEqual(envelope.kdf.memoryKiB, 65_536)
+    XCTAssertEqual(envelope.kdf.iterations, 3)
+    XCTAssertEqual(envelope.kdf.parallelism, 1)
+    XCTAssertEqual(Data(base64Encoded: envelope.kdf.saltBase64)?.count, 16)
 
     XCTAssertThrowsError(try service.openEncryptedBackup(backup, passphrase: "wrong")) { error in
       XCTAssertEqual(error as? PortableDataError, .authenticationFailed)
+    }
+    var tamperedEnvelope = envelope
+    var sealed = try XCTUnwrap(Data(base64Encoded: tamperedEnvelope.sealedDataBase64))
+    sealed[sealed.startIndex] ^= 0x01
+    tamperedEnvelope.sealedDataBase64 = sealed.base64EncodedString()
+    XCTAssertThrowsError(
+      try service.openEncryptedBackup(
+        try JSONEncoder().encode(tamperedEnvelope),
+        passphrase: "correct horse"
+      )
+    ) { error in
+      XCTAssertEqual(error as? PortableDataError, .authenticationFailed)
+    }
+    XCTAssertThrowsError(
+      try service.openEncryptedBackup(Data("{broken".utf8), passphrase: "correct horse")
+    ) { error in
+      XCTAssertEqual(error as? PortableDataError, .invalidArchive)
     }
     let archive = try service.openEncryptedBackup(backup, passphrase: "correct horse")
     let preview = service.previewRestore(archive)
     XCTAssertTrue(preview.isCompatible)
     XCTAssertTrue(preview.warnings.isEmpty)
+  }
+
+  func testArgon2idMatchesOfficial20190702Vector() throws {
+    let derived = try Argon2KeyDeriver().derive(
+      passphrase: "password",
+      salt: Data("somesalt".utf8),
+      memoryKiB: 65_536,
+      iterations: 2,
+      parallelism: 1
+    )
+    XCTAssertEqual(
+      derived.map { String(format: "%02x", $0) }.joined(),
+      "09316115d5cf24ed5a15a31a3ba326e5cf32edc24702987c02b6566f61913cf7"
+    )
+  }
+
+  func testV9BackupRejectsExcessiveKDFParametersBeforeDerivation() throws {
+    let context = try configuredDatabase()
+    let service = PortableDataService(connection: context.database.connection, root: root)
+    let backup = try service.makeEncryptedBackup(passphrase: "passphrase", createdAt: now)
+    var envelope = try JSONDecoder().decode(BackupEnvelopeV9.self, from: backup)
+    envelope.kdf.memoryKiB = 1_048_576
+    let tampered = try JSONEncoder().encode(envelope)
+
+    XCTAssertThrowsError(
+      try service.openEncryptedBackup(tampered, passphrase: "passphrase")
+    ) { error in
+      XCTAssertEqual(error as? PortableDataError, .invalidKeyDerivationParameters)
+    }
+  }
+
+  func testLegacyV8BackupRemainsExplicitlyReadable() throws {
+    let context = try configuredDatabase()
+    let service = PortableDataService(connection: context.database.connection, root: root)
+    let archiveData = try service.encodeArchive(service.makeArchive(createdAt: now))
+    let salt = Data("legacy-salt-0001".utf8)
+    let iterations = 10_000
+    let key = legacyKey(passphrase: "legacy-pass", salt: salt, iterations: iterations)
+    let sealed = try AES.GCM.seal(archiveData, using: key)
+    let combined = try XCTUnwrap(sealed.combined)
+    let legacy = EncryptedBackupEnvelope(
+      formatVersion: 8,
+      iterations: iterations,
+      saltBase64: salt.base64EncodedString(),
+      sealedDataBase64: combined.base64EncodedString()
+    )
+    let data = try JSONEncoder().encode(legacy)
+
+    XCTAssertEqual(service.encryptedBackupKind(data), .legacyV8)
+    XCTAssertEqual(
+      try service.openEncryptedBackup(data, passphrase: "legacy-pass").manifest.formatVersion,
+      8
+    )
   }
 
   func testVersion8MigratesToTransferHistoryWithPreMigrationBackup() throws {
@@ -243,5 +322,19 @@ final class V08PortableDataTests: XCTestCase {
     columns[14] = String(amount)
     columns[16] = "弥生移行"
     return columns.map { "\"\($0)\"" }.joined(separator: ",")
+  }
+
+  private func legacyKey(
+    passphrase: String,
+    salt: Data,
+    iterations: Int
+  ) -> SymmetricKey {
+    var material = Data(passphrase.utf8) + salt
+    for counter in 0..<iterations {
+      var bigEndian = UInt64(counter).bigEndian
+      withUnsafeBytes(of: &bigEndian) { material.append(contentsOf: $0) }
+      material = Data(SHA256.hash(data: material))
+    }
+    return SymmetricKey(data: material)
   }
 }

@@ -1,0 +1,14 @@
+{
+  "calendarYear": 2026,
+  "keyID": "bundled-v1.1",
+  "minimumAppVersion": "1.1.0",
+  "packageID": "blueprint-rules-2026.1",
+  "payloadSHA256": "3d261ef418397a6a1dcaa9bccc2fdff6dae1c193e38bd303a344c21354ff5b3f",
+  "revision": "2026.1",
+  "schemaVersion": 1,
+  "scopes": [
+    "bookkeeping",
+    "consumptionTax",
+    "closing"
+  ]
+}

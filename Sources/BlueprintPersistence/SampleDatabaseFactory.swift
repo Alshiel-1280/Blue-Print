@@ -155,8 +155,8 @@ public enum SampleDatabaseFactory {
     let fiscalYear = try FiscalYear(
       metadata: EntityMetadata(createdAt: date),
       calendarYear: 2026,
-      taxRuleSetID: BlueprintVersions.taxRuleSet,
-      formRuleSetID: BlueprintVersions.formRuleSet
+      taxRuleSetID: BlueprintLegacyVersions.taxRuleSet,
+      formRuleSetID: BlueprintLegacyVersions.formRuleSet
     )
     let profile = BusinessProfile(
       metadata: EntityMetadata(createdAt: date),

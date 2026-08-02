@@ -6,6 +6,7 @@ struct VersionView: View {
     ("アプリ", BlueprintVersions.app),
     ("DBスキーマ", String(BlueprintVersions.databaseSchema)),
     ("データ形式", String(BlueprintVersions.dataFormat)),
+    ("バックアップ形式", String(BlueprintVersions.backupFormat)),
     ("年度ルール", BlueprintVersions.taxRuleSet),
     ("帳票ルール", BlueprintVersions.formRuleSet),
     ("撮影プロトコル", String(BlueprintVersions.captureProtocol)),

@@ -1,0 +1,67 @@
+{
+  "invoiceDeductionRules": [
+    {
+      "deductibleRateBasisPoints": 8000,
+      "firstTransactionDate": "2023-10-01",
+      "lastTransactionDate": "2026-09-30"
+    },
+    {
+      "annualSupplierPurchaseLimitYen": 100000000,
+      "deductibleRateBasisPoints": 7000,
+      "firstTransactionDate": "2026-10-01",
+      "lastTransactionDate": "2028-09-30",
+      "limitAppliesToTaxPeriodsStartingOnOrAfter": "2026-10-01"
+    },
+    {
+      "annualSupplierPurchaseLimitYen": 100000000,
+      "deductibleRateBasisPoints": 5000,
+      "firstTransactionDate": "2028-10-01",
+      "lastTransactionDate": "2030-09-30",
+      "limitAppliesToTaxPeriodsStartingOnOrAfter": "2026-10-01"
+    },
+    {
+      "annualSupplierPurchaseLimitYen": 100000000,
+      "deductibleRateBasisPoints": 3000,
+      "firstTransactionDate": "2030-10-01",
+      "lastTransactionDate": "2031-09-30",
+      "limitAppliesToTaxPeriodsStartingOnOrAfter": "2026-10-01"
+    },
+    {
+      "annualSupplierPurchaseLimitYen": 100000000,
+      "deductibleRateBasisPoints": 0,
+      "firstTransactionDate": "2031-10-01",
+      "limitAppliesToTaxPeriodsStartingOnOrAfter": "2026-10-01"
+    }
+  ],
+  "taxRuleSet": {
+    "blueReturnDeduction": {
+      "basicMaximum": {
+        "yen": 100000
+      },
+      "doubleEntryMaximum": {
+        "yen": 550000
+      },
+      "electronicMaximum": {
+        "yen": 650000
+      }
+    },
+    "effectivePeriod": {
+      "firstYear": 2026,
+      "lastYear": 2026
+    },
+    "id": "tax-2026.1",
+    "revision": "2026.1",
+    "sources": [
+      {
+        "checkedAt": "2026-07-29T00:00:00Z",
+        "title": "令和8年分 所得税等の確定申告書（暫定様式）",
+        "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/kakutei.htm"
+      },
+      {
+        "checkedAt": "2026-07-29T00:00:00Z",
+        "title": "令和8年度税制改正特集（インボイス制度）",
+        "url": "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm"
+      }
+    ]
+  }
+}

@@ -6,17 +6,22 @@
 
 ## 判断
 
-既定の正本を `~/Library/Application Support/BluePrint/` に置き、次を分離する。
+v2の正本をSandboxコンテナ内の `Application Support/BluePrint-v2/` に置き、
+v1の `Application Support/BluePrint/` と完全に分離する。
 
 ```text
-BluePrint/
-  Database/blueprint.sqlite
-  Evidence/Originals/<uuid>/<original filename>
-  Evidence/Derived/<uuid>/
-  Rules/<rule-set-id>/
-  Backups/Automatic/
-  Backups/Manual/
+BluePrint-v2/
+  storage-generation.json
+  Database/blueprint-v2.sqlite
+  Evidence/Originals/<uuid>.<extension>
+  Evidence/Derived/
+  Rules/<year>.bprules/
+  Jobs/
+  Backups/
   Diagnostics/
 ```
 
-DB は証憑の索引・ハッシュ・関連だけを持ち、原本ファイルを BLOB として埋め込まない。マイグレーション前バックアップは DB と WAL を安全に確定した後に作る。利用者指定領域は security-scoped bookmark で保持する。
+`storageGeneration = 2`、DB schema 1、backup family `blueprint-v2` version 1
+から開始する。DBは証憑の索引・ハッシュ・関連だけを持ち、原本をBLOB化しない。
+v1ルートを検出しても読み書き・コピー・削除しない。利用者選択ファイルは
+security-scoped URLの有効期間内だけ読む。

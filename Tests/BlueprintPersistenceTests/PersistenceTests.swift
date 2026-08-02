@@ -31,7 +31,7 @@ final class PersistenceTests: XCTestCase {
     let database = try BlueprintDatabase(databaseURL: databaseURL)
     XCTAssertEqual(
       try database.connection.scalarInt("PRAGMA user_version"),
-      Int64(BlueprintVersions.databaseSchema)
+      Int64(BlueprintLegacyVersions.databaseSchema)
     )
 
     let rows = try database.connection.query("SELECT key, value FROM version_metadata")
@@ -42,11 +42,14 @@ final class PersistenceTests: XCTestCase {
         }
         return (key, value)
       })
-    XCTAssertEqual(versions["app_version"], BlueprintVersions.app)
-    XCTAssertEqual(versions["data_format_version"], String(BlueprintVersions.dataFormat))
-    XCTAssertEqual(versions["tax_rule_set_version"], BlueprintVersions.taxRuleSet)
-    XCTAssertEqual(versions["form_rule_set_version"], BlueprintVersions.formRuleSet)
-    XCTAssertEqual(versions["capture_protocol_version"], String(BlueprintVersions.captureProtocol))
+    XCTAssertEqual(versions["app_version"], BlueprintLegacyVersions.app)
+    XCTAssertEqual(versions["data_format_version"], String(BlueprintLegacyVersions.dataFormat))
+    XCTAssertEqual(versions["tax_rule_set_version"], BlueprintLegacyVersions.taxRuleSet)
+    XCTAssertEqual(versions["form_rule_set_version"], BlueprintLegacyVersions.formRuleSet)
+    XCTAssertEqual(
+      versions["capture_protocol_version"],
+      String(BlueprintLegacyVersions.captureProtocol)
+    )
   }
 
   func testInitialSetupRoundTripsAfterDatabaseReopen() throws {
@@ -244,7 +247,7 @@ final class PersistenceTests: XCTestCase {
 
     XCTAssertEqual(
       try database.connection.scalarInt("PRAGMA user_version"),
-      Int64(BlueprintVersions.databaseSchema)
+      Int64(BlueprintLegacyVersions.databaseSchema)
     )
     XCTAssertEqual(try database.profiles.fetchAll().first?.tradeName, "移行テスト事業者")
     XCTAssertEqual(
@@ -268,7 +271,7 @@ final class PersistenceTests: XCTestCase {
 
     XCTAssertEqual(
       try database.connection.scalarInt("PRAGMA user_version"),
-      Int64(BlueprintVersions.databaseSchema)
+      Int64(BlueprintLegacyVersions.databaseSchema)
     )
     XCTAssertEqual(try database.profiles.fetchAll().first?.tradeName, "移行テスト事業者")
     XCTAssertEqual(

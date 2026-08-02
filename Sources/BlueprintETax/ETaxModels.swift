@@ -182,4 +182,10 @@ public struct ETaxGeneratedPackage: Equatable, Sendable {
   public let fileName: String
   public let data: Data
   public let hash: String
+
+  public init(fileName: String, data: Data, hash: String) {
+    self.fileName = fileName
+    self.data = data
+    self.hash = hash
+  }
 }

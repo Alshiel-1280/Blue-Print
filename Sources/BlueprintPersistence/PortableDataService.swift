@@ -7,12 +7,14 @@ public enum PortableDataError: Error, Equatable, Sendable {
   case invalidArchive
   case incompatibleVersion(found: Int, supported: Int)
   case authenticationFailed
+  case invalidKeyDerivationParameters
   case evidenceHashMismatch(path: String)
   case databaseIntegrityFailure(String)
   case destinationNotEmpty
 }
 
 public struct PortableDataService: @unchecked Sendable {
+  @available(*, deprecated, message: "Legacy v8 backup reader only")
   public static let backupIterations = 100_000
 
   public let connection: SQLiteConnection
@@ -40,9 +42,9 @@ public struct PortableDataService: @unchecked Sendable {
         "SELECT COALESCE(SUM(amount_yen), 0) FROM journal_lines WHERE side = 'credit'") ?? 0
     let snapshot = try Data(contentsOf: connection.databaseURL)
     let manifest = TransferManifest(
-      formatVersion: BlueprintVersions.dataFormat,
-      appVersion: BlueprintVersions.app,
-      databaseSchemaVersion: BlueprintVersions.databaseSchema,
+      formatVersion: BlueprintLegacyVersions.dataFormat,
+      appVersion: BlueprintLegacyVersions.app,
+      databaseSchemaVersion: BlueprintLegacyVersions.databaseSchema,
       createdAt: createdAt,
       tableRowCounts: Dictionary(uniqueKeysWithValues: tables.map { ($0.name, $0.rows.count) }),
       evidenceCount: evidence.count,
@@ -82,13 +84,22 @@ public struct PortableDataService: @unchecked Sendable {
   ) throws -> Data {
     let archiveData = try encodeArchive(makeArchive(createdAt: createdAt))
     let salt = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) })
-    let key = deriveKey(passphrase: passphrase, salt: salt, iterations: Self.backupIterations)
+    let keyData = try Argon2KeyDeriver().derive(
+      passphrase: passphrase,
+      salt: salt
+    )
+    let key = SymmetricKey(data: keyData)
     let sealed = try AES.GCM.seal(archiveData, using: key)
     guard let combined = sealed.combined else { throw PortableDataError.invalidArchive }
-    let envelope = EncryptedBackupEnvelope(
-      formatVersion: BlueprintVersions.dataFormat,
-      iterations: Self.backupIterations,
-      saltBase64: salt.base64EncodedString(),
+    let envelope = BackupEnvelopeV9(
+      formatVersion: BlueprintLegacyVersions.backupFormat,
+      kdf: Argon2idParameters(
+        memoryKiB: Argon2KeyDeriver.defaultMemoryKiB,
+        iterations: Argon2KeyDeriver.defaultIterations,
+        parallelism: Argon2KeyDeriver.defaultParallelism,
+        outputBytes: Argon2KeyDeriver.outputBytes,
+        saltBase64: salt.base64EncodedString()
+      ),
       sealedDataBase64: combined.base64EncodedString()
     )
     let encoder = JSONEncoder()
@@ -97,6 +108,71 @@ public struct PortableDataService: @unchecked Sendable {
   }
 
   public func openEncryptedBackup(_ data: Data, passphrase: String) throws -> PortableArchive {
+    let decoder = JSONDecoder()
+    if let envelope = try? decoder.decode(BackupEnvelopeV9.self, from: data) {
+      return try openV9Backup(envelope, passphrase: passphrase)
+    }
+    return try openLegacyV8Backup(data, passphrase: passphrase)
+  }
+
+  public func encryptedBackupKind(_ data: Data) -> EncryptedBackupKind? {
+    let decoder = JSONDecoder()
+    if let envelope = try? decoder.decode(BackupEnvelopeV9.self, from: data),
+      envelope.formatName == "blueprint-encrypted-backup",
+      envelope.formatVersion == BlueprintLegacyVersions.backupFormat
+    {
+      return .currentV9
+    }
+    if let envelope = try? decoder.decode(EncryptedBackupEnvelope.self, from: data),
+      envelope.formatName == "blueprint-encrypted-backup",
+      envelope.keyDerivation == "iterated-SHA256-v1"
+    {
+      return .legacyV8
+    }
+    return nil
+  }
+
+  private func openV9Backup(
+    _ envelope: BackupEnvelopeV9,
+    passphrase: String
+  ) throws -> PortableArchive {
+    guard
+      envelope.formatName == "blueprint-encrypted-backup",
+      envelope.formatVersion == BlueprintLegacyVersions.backupFormat,
+      envelope.formatFamily == "blueprint-v1",
+      envelope.encryption == "AES-256-GCM",
+      envelope.keyDerivation == "Argon2id-v19",
+      envelope.kdf.version == Argon2KeyDeriver.version,
+      let salt = Data(base64Encoded: envelope.kdf.saltBase64),
+      let combined = Data(base64Encoded: envelope.sealedDataBase64),
+      let sealedBox = try? AES.GCM.SealedBox(combined: combined)
+    else {
+      throw PortableDataError.invalidArchive
+    }
+    let keyData: Data
+    do {
+      keyData = try Argon2KeyDeriver().derive(
+        passphrase: passphrase,
+        salt: salt,
+        memoryKiB: envelope.kdf.memoryKiB,
+        iterations: envelope.kdf.iterations,
+        parallelism: envelope.kdf.parallelism,
+        outputBytes: envelope.kdf.outputBytes
+      )
+    } catch Argon2KeyDerivationError.invalidParameters {
+      throw PortableDataError.invalidKeyDerivationParameters
+    }
+    let key = SymmetricKey(data: keyData)
+    guard let plaintext = try? AES.GCM.open(sealedBox, using: key) else {
+      throw PortableDataError.authenticationFailed
+    }
+    return try decodeArchive(plaintext)
+  }
+
+  private func openLegacyV8Backup(
+    _ data: Data,
+    passphrase: String
+  ) throws -> PortableArchive {
     guard
       let envelope = try? JSONDecoder().decode(EncryptedBackupEnvelope.self, from: data),
       envelope.formatName == "blueprint-encrypted-backup",
@@ -107,7 +183,11 @@ public struct PortableDataService: @unchecked Sendable {
       let combined = Data(base64Encoded: envelope.sealedDataBase64),
       let sealedBox = try? AES.GCM.SealedBox(combined: combined)
     else { throw PortableDataError.invalidArchive }
-    let key = deriveKey(passphrase: passphrase, salt: salt, iterations: envelope.iterations)
+    let key = deriveLegacyKey(
+      passphrase: passphrase,
+      salt: salt,
+      iterations: envelope.iterations
+    )
     guard let plaintext = try? AES.GCM.open(sealedBox, using: key) else {
       throw PortableDataError.authenticationFailed
     }
@@ -123,8 +203,8 @@ public struct PortableDataService: @unchecked Sendable {
       warnings.append("マニフェストと証憑件数が一致しません")
     }
     let compatible =
-      archive.manifest.formatVersion <= BlueprintVersions.dataFormat
-      && archive.manifest.databaseSchemaVersion <= BlueprintVersions.databaseSchema
+      archive.manifest.formatVersion <= BlueprintLegacyVersions.dataFormat
+      && archive.manifest.databaseSchemaVersion <= BlueprintLegacyVersions.databaseSchema
     if !compatible { warnings.append("このアプリより新しい形式のバックアップです") }
     return RestorePreview(manifest: archive.manifest, isCompatible: compatible, warnings: warnings)
   }
@@ -359,21 +439,25 @@ public struct PortableDataService: @unchecked Sendable {
     guard manifest.formatName == "blueprint-portable-archive" else {
       throw PortableDataError.invalidArchive
     }
-    guard manifest.formatVersion <= BlueprintVersions.dataFormat else {
+    guard manifest.formatVersion <= BlueprintLegacyVersions.dataFormat else {
       throw PortableDataError.incompatibleVersion(
         found: manifest.formatVersion,
-        supported: BlueprintVersions.dataFormat
+        supported: BlueprintLegacyVersions.dataFormat
       )
     }
-    guard manifest.databaseSchemaVersion <= BlueprintVersions.databaseSchema else {
+    guard manifest.databaseSchemaVersion <= BlueprintLegacyVersions.databaseSchema else {
       throw PortableDataError.incompatibleVersion(
         found: manifest.databaseSchemaVersion,
-        supported: BlueprintVersions.databaseSchema
+        supported: BlueprintLegacyVersions.databaseSchema
       )
     }
   }
 
-  private func deriveKey(passphrase: String, salt: Data, iterations: Int) -> SymmetricKey {
+  private func deriveLegacyKey(
+    passphrase: String,
+    salt: Data,
+    iterations: Int
+  ) -> SymmetricKey {
     var material = Data(passphrase.utf8) + salt
     for counter in 0..<iterations {
       var bigEndian = UInt64(counter).bigEndian

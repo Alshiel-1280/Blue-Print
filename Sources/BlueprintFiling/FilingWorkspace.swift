@@ -114,6 +114,26 @@ public struct FilingWorkspaceSummary: Equatable, Sendable {
   public let deductions: Money
   public let attentionCount: Int
 
+  public init(
+    businessIncome: BusinessIncomeSnapshot,
+    propertyIncome: Money,
+    wageRevenue: Money,
+    securitiesIncome: Money,
+    otherIncome: Money,
+    withholdingTax: Money,
+    deductions: Money,
+    attentionCount: Int
+  ) {
+    self.businessIncome = businessIncome
+    self.propertyIncome = propertyIncome
+    self.wageRevenue = wageRevenue
+    self.securitiesIncome = securitiesIncome
+    self.otherIncome = otherIncome
+    self.withholdingTax = withholdingTax
+    self.deductions = deductions
+    self.attentionCount = attentionCount
+  }
+
   public var combinedIncomeAndRevenue: Money {
     Money(
       yen: businessIncome.income.yen + propertyIncome.yen + wageRevenue.yen + securitiesIncome.yen

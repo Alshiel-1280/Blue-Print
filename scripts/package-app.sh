@@ -5,6 +5,14 @@ configuration="${1:-debug}"
 output_root="${2:-.build/app}"
 build_origin="${3:-self}"
 app_name="BluePrint"
+swift_sandbox_flag=""
+
+# SwiftPM's own sandbox cannot be nested inside some CI or agent sandboxes.
+# This affects only the build subprocess; application sandbox entitlements are
+# still applied to the resulting bundle.
+if [ "${BLUEPRINT_SWIFT_DISABLE_SANDBOX:-0}" = "1" ]; then
+    swift_sandbox_flag="--disable-sandbox"
+fi
 
 case "$configuration" in
     debug)
@@ -28,17 +36,23 @@ case "$build_origin" in
 esac
 
 if [ "$build_origin" = "official" ]; then
-    swift build -c "$swift_configuration" --product "$app_name" -Xswiftc -DBLUEPRINT_OFFICIAL_BUILD
+    swift build $swift_sandbox_flag -c "$swift_configuration" --product "$app_name" -Xswiftc -DBLUEPRINT_OFFICIAL_BUILD
 else
-    swift build -c "$swift_configuration" --product "$app_name"
+    swift build $swift_sandbox_flag -c "$swift_configuration" --product "$app_name"
 fi
-binary_path="$(swift build -c "$swift_configuration" --show-bin-path)/$app_name"
+binary_path="$(swift build $swift_sandbox_flag -c "$swift_configuration" --show-bin-path)/$app_name"
+binary_directory=$(dirname "$binary_path")
 bundle_path="$output_root/$app_name.app"
 
 mkdir -p "$bundle_path/Contents/MacOS" "$bundle_path/Contents/Resources"
 cp "$binary_path" "$bundle_path/Contents/MacOS/$app_name"
 cp Resources/Info.plist "$bundle_path/Contents/Info.plist"
 cp Resources/BluePrint.icns "$bundle_path/Contents/Resources/BluePrint.icns"
+for resource_bundle in "$binary_directory"/*.bundle; do
+    if [ -d "$resource_bundle" ]; then
+        cp -R "$resource_bundle" "$bundle_path/Contents/Resources/"
+    fi
+done
 chmod 755 "$bundle_path/Contents/MacOS/$app_name"
 printf 'APPL????' > "$bundle_path/Contents/PkgInfo"
 
@@ -47,7 +61,7 @@ printf 'APPL????' > "$bundle_path/Contents/PkgInfo"
 # complete ad-hoc bundle signature so the generated .app has one consistent
 # local signature. Official builds are signed later with Developer ID.
 if [ "$build_origin" = "self" ]; then
-    codesign --force --sign - "$bundle_path"
+    codesign --force --sign - --entitlements Resources/BluePrint.entitlements "$bundle_path"
 fi
 
 echo "$bundle_path"

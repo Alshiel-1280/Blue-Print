@@ -5,7 +5,7 @@ import SwiftUI
 struct BusinessSettingsView: View {
   @ObservedObject var model: AppModel
   @State private var draft: BusinessProfile?
-  @State private var calendarYear = OfficialRules2025.latestSupportedYear
+  @State private var calendarYear = OfficialRulePackages.latestSupportedYear
   @State private var showingLockConfirmation = false
   @State private var reopenReason = ""
 
@@ -25,13 +25,29 @@ struct BusinessSettingsView: View {
               LabeledContent("状態", value: model.fiscalYear?.status.localizedName ?? "未設定")
               Picker("申告年度", selection: $calendarYear) {
                 if let currentYear = model.fiscalYear?.calendarYear,
-                  !OfficialRules2025.supportedYears.contains(currentYear)
+                  !OfficialRulePackages.supportedYears.contains(currentYear)
                 {
                   Text("\(currentYear)年（e-Tax未対応）").tag(currentYear)
                 }
-                ForEach(OfficialRules2025.supportedYears, id: \.self) { year in
-                  Text("\(year)年").tag(year)
+                ForEach(OfficialRulePackages.supportedYears, id: \.self) { year in
+                  let filingSupported =
+                    OfficialRulePackages.store.support(for: year)?.supports(.xtx) == true
+                  Text("\(year)年\(filingSupported ? "" : "（申告出力未対応）")").tag(year)
                 }
+              }
+              if let support = OfficialRulePackages.store.support(for: calendarYear) {
+                LabeledContent("年度ルール") {
+                  Text(
+                    support.supportedScopes
+                      .sorted { $0.rawValue < $1.rawValue }
+                      .map(\.localizedName)
+                      .joined(separator: "・")
+                  )
+                  .multilineTextAlignment(.trailing)
+                }
+                Text("ルール版 \(support.packageRevision) は署名と内容ハッシュを検証済みです。")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
               }
               if calendarYear != model.fiscalYear?.calendarYear {
                 Button("申告年度を\(calendarYear)年へ修正") {
@@ -123,11 +139,11 @@ struct BusinessSettingsView: View {
     }
     .onAppear {
       draft = model.profile
-      calendarYear = model.fiscalYear?.calendarYear ?? OfficialRules2025.latestSupportedYear
+      calendarYear = model.fiscalYear?.calendarYear ?? OfficialRulePackages.latestSupportedYear
     }
     .onChange(of: model.profile) { _, newValue in draft = newValue }
     .onChange(of: model.fiscalYear) { _, newValue in
-      calendarYear = newValue?.calendarYear ?? OfficialRules2025.latestSupportedYear
+      calendarYear = newValue?.calendarYear ?? OfficialRulePackages.latestSupportedYear
     }
     .confirmationDialog(
       "年度をロックしますか？",
@@ -137,6 +153,18 @@ struct BusinessSettingsView: View {
       Button("キャンセル", role: .cancel) {}
     } message: {
       Text("ロック後は仕訳、インポート、年度設定の変更を拒否します。再オープンには理由が必要です。")
+    }
+  }
+}
+
+extension RuleScope {
+  fileprivate var localizedName: String {
+    switch self {
+    case .bookkeeping: "記帳"
+    case .consumptionTax: "消費税"
+    case .closing: "決算"
+    case .incomeTaxForm: "所得税帳票"
+    case .xtx: "XTX"
     }
   }
 }

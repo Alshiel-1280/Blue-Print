@@ -70,7 +70,7 @@ public enum OCRCandidateExtractor {
     for line in lines {
       if let date = firstMatch(
         in: line.text,
-        pattern: #"(?:20\d{2})[./年-](?:0?[1-9]|1[0-2])[./月-](?:0?[1-9]|[12]\d|3[01])日?"#
+        pattern: #"(?:20\d{2})[./年-](?:0[1-9]|1[0-2]|[1-9])[./月-](?:0[1-9]|[12]\d|3[01]|[1-9])日?"#
       ) {
         candidates.append(
           OCRCandidate(

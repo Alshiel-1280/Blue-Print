@@ -3,53 +3,54 @@ import SwiftUI
 
 @main
 struct BluePrintApplication: App {
-  @StateObject private var model = AppModel()
+  @StateObject private var store = V2WorkspaceStore()
 
   var body: some Scene {
     WindowGroup {
       Group {
-        if model.isLoading {
+        if store.isLoading {
           ProgressView("データを確認しています")
             .frame(minWidth: 560, minHeight: 420)
-        } else if model.isSetupComplete {
-          MainShellView(model: model)
+        } else if store.isSetupComplete {
+          V2RootView(store: store)
         } else {
-          InitialSetupView(model: model)
+          V2InitialSetupView(store: store)
         }
       }
       .tint(.indigo)
       .alert(
         "処理を完了できませんでした",
         isPresented: Binding(
-          get: { model.errorMessage != nil },
-          set: { if !$0 { model.dismissError() } }
+          get: { store.errorMessage != nil },
+          set: { if !$0 { store.dismissError() } }
         )
       ) {
-        Button("閉じる", role: .cancel) { model.dismissError() }
+        Button("閉じる", role: .cancel) { store.dismissError() }
       } message: {
-        Text(model.presentedErrorMessage ?? "")
+        Text(store.errorMessage ?? "")
       }
     }
     .defaultSize(width: 1_280, height: 860)
     .commands {
       CommandGroup(replacing: .newItem) {
-        Button("新規作成") {}
+        Button("新規仕訳") { store.selectedDestination = .daily }
           .keyboardShortcut("n", modifiers: .command)
-          .disabled(true)
+          .disabled(!store.isSetupComplete)
       }
       CommandMenu("移動") {
-        Button("受信箱") { model.selectedDestination = .inbox }
+        Button("ホーム") { store.selectedDestination = .home }
           .keyboardShortcut("1", modifiers: .command)
-        Button("取引入力") { model.selectedDestination = .transactionInput }
+        Button("日常処理") { store.selectedDestination = .daily }
           .keyboardShortcut("2", modifiers: .command)
-        Button("請求・支払") { model.selectedDestination = .billing }
+        Button("帳簿") { store.selectedDestination = .books }
           .keyboardShortcut("3", modifiers: .command)
-        Button("決算・レポート") { model.selectedDestination = .closing }
+        Button("決算") { store.selectedDestination = .closing }
           .keyboardShortcut("4", modifiers: .command)
-        Button("申告ワークスペース") { model.selectedDestination = .filing }
+        Button("申告") { store.selectedDestination = .filing }
           .keyboardShortcut("5", modifiers: .command)
+          .disabled(!store.isFilingSupported)
         Divider()
-        Button("データ管理") { model.selectedDestination = .dataManagement }
+        Button("データ管理") { store.selectedDestination = .utilities }
           .keyboardShortcut("0", modifiers: [.command, .shift])
       }
     }

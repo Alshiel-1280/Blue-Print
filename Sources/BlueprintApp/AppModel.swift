@@ -51,7 +51,7 @@ final class AppModel: ObservableObject {
   @Published private(set) var activeOperation: ActiveOperation?
   @Published private(set) var isLoading = true
   @Published var errorMessage: String?
-  @Published var selectedDestination: AppDestination? = .inbox
+  let session = AppSessionStore()
 
   private var database: BlueprintDatabase?
   private let clock: any BlueprintClock
@@ -85,6 +85,16 @@ final class AppModel: ObservableObject {
 
   var isSetupComplete: Bool { profile != nil && fiscalYear != nil }
 
+  var currentYearSupport: YearSupportMatrix? {
+    guard let year = fiscalYear?.calendarYear else { return nil }
+    return OfficialRulePackages.store.support(for: year)
+  }
+
+  var isFilingSupported: Bool {
+    currentYearSupport?.supports(.incomeTaxForm) == true
+      && currentYearSupport?.supports(.xtx) == true
+  }
+
   var presentedErrorMessage: String? {
     errorMessage.map(Self.actionableErrorMessage)
   }
@@ -116,12 +126,13 @@ final class AppModel: ObservableObject {
 
     do {
       let now = clock.now()
-      let configuredRules = try? OfficialRules2025.catalog.rules(for: calendarYear)
+      let configuredTaxRule = try? OfficialRulePackages.store.taxRule(for: calendarYear)
+      let configuredFormRule = try? OfficialRulePackages.store.formRule(for: calendarYear)
       let fiscalYear = try FiscalYear(
         metadata: EntityMetadata(createdAt: now),
         calendarYear: calendarYear,
-        taxRuleSetID: configuredRules?.0.id ?? "tax-\(calendarYear)-unavailable",
-        formRuleSetID: configuredRules?.1.id ?? "form-\(calendarYear)-unavailable"
+        taxRuleSetID: configuredTaxRule?.id ?? "tax-\(calendarYear)-unavailable",
+        formRuleSetID: configuredFormRule?.id ?? "form-\(calendarYear)-unavailable"
       )
       let profile = BusinessProfile(
         metadata: EntityMetadata(createdAt: now),
@@ -163,12 +174,13 @@ final class AppModel: ObservableObject {
   func changeFiscalYear(to calendarYear: Int) {
     guard let database, let fiscalYear else { return }
     do {
-      let rules = try OfficialRules2025.catalog.rules(for: calendarYear)
+      let taxRule = try OfficialRulePackages.store.taxRule(for: calendarYear)
+      let formRule = try? OfficialRulePackages.store.formRule(for: calendarYear)
       try database.retargetFiscalYear(
         id: fiscalYear.id,
         calendarYear: calendarYear,
-        taxRuleSetID: rules.0.id,
-        formRuleSetID: rules.1.id,
+        taxRuleSetID: taxRule.id,
+        formRuleSetID: formRule?.id ?? "form-\(calendarYear)-unavailable",
         at: clock.now()
       )
       errorMessage = nil
@@ -1142,7 +1154,7 @@ final class AppModel: ObservableObject {
 
   private func currentRules() throws -> (TaxRuleSet, FormRuleSet) {
     guard let fiscalYear else { throw RuleSetError.unsupportedYear(0) }
-    return try OfficialRules2025.catalog.rules(for: fiscalYear.calendarYear)
+    return try OfficialRulePackages.store.rules(for: fiscalYear.calendarYear)
   }
 
   var filingSummary: FilingWorkspaceSummary? {
@@ -1583,6 +1595,8 @@ final class AppModel: ObservableObject {
       "取消済みの移行プレビューは取り込めません。CSVをもう一度選択してください。"
     case PortableDataError.authenticationFailed:
       "バックアップを開けません。パスフレーズが正しいか確認してください。"
+    case PortableDataError.invalidKeyDerivationParameters:
+      "バックアップの鍵導出パラメータが安全な範囲外です。このファイルは復元できません。"
     case PortableDataError.incompatibleVersion(let found, let supported):
       "バックアップ形式 \(found) は、このアプリの対応形式 \(supported) より新しいため復元できません。"
     case PortableDataError.evidenceHashMismatch(let path):

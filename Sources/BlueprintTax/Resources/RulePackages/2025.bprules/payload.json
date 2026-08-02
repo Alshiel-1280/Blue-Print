@@ -1,0 +1,363 @@
+{
+  "formRuleSet": {
+    "effectivePeriod": {
+      "firstYear": 2025,
+      "lastYear": 2025
+    },
+    "fields": [
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "税務署番号",
+        "maximumDigits": 5,
+        "permitsNegative": false,
+        "tag": "IT.ZEIMUSHO.CD"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "利用者識別番号",
+        "maximumDigits": 16,
+        "permitsNegative": false,
+        "tag": "IT.NOZEISHA_ID"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "text",
+        "isRequired": true,
+        "label": "氏名",
+        "permitsNegative": false,
+        "tag": "IT.NOZEISHA_NM"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "text",
+        "isRequired": true,
+        "label": "納税地",
+        "permitsNegative": false,
+        "tag": "IT.NOZEISHA_ADR"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "年分",
+        "maximumDigits": 2,
+        "permitsNegative": false,
+        "tag": "ABA00010"
+      },
+      {
+        "allowedCodes": ["1", "2", "3", "4"],
+        "dataType": "code",
+        "isRequired": true,
+        "label": "申告書の種類",
+        "permitsNegative": false,
+        "tag": "ABA00020"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "text",
+        "isRequired": true,
+        "label": "税務署名",
+        "permitsNegative": false,
+        "tag": "ABA00030"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "事業収入",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ABB00030"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "不動産収入",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ABB00050"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "給与収入",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ABB00080"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "事業所得",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "ABB00300"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "不動産所得",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "ABB00340"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "社会保険料控除",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ABB00450"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "生命保険料控除",
+        "maximumDigits": 6,
+        "permitsNegative": false,
+        "tag": "ABB00470"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "地震保険料控除",
+        "maximumDigits": 5,
+        "permitsNegative": false,
+        "tag": "ABB00480"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": false,
+        "label": "寄附金控除",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ABB00490"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用決算書の年分",
+        "maximumDigits": 2,
+        "permitsNegative": false,
+        "tag": "AMA00000"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "売上（収入）金額",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "AMF00100"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用の経費計",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "AMF00380"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用の差引金額",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "AMF00390"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用の控除前所得",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "AMF00500"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用の青色申告特別控除",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "AMF00510"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "一般用の所得金額",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "AMF00530"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産用決算書の年分",
+        "maximumDigits": 2,
+        "permitsNegative": false,
+        "tag": "ANA00000"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "賃貸料",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ANF00080"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産収入計",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ANF00110"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の減価償却費",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ANF00160"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の必要経費計",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ANF00220"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の差引金額",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "ANF00230"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の控除前所得",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "ANF00250"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の青色申告特別控除",
+        "maximumDigits": 15,
+        "permitsNegative": false,
+        "tag": "ANF00260"
+      },
+      {
+        "allowedCodes": [],
+        "dataType": "integer",
+        "isRequired": true,
+        "label": "不動産の所得金額",
+        "maximumDigits": 15,
+        "permitsNegative": true,
+        "tag": "ANF00270"
+      }
+    ],
+    "forms": [
+      {
+        "id": "KOA020",
+        "maximumPages": 8,
+        "name": "所得税及び復興特別所得税申告書",
+        "version": "23.0"
+      },
+      {
+        "id": "KOA210",
+        "maximumPages": 4,
+        "name": "青色申告決算書（一般用）",
+        "version": "11.0"
+      },
+      {
+        "id": "KOA220",
+        "maximumPages": 4,
+        "name": "青色申告決算書（不動産所得用）",
+        "version": "8.0"
+      }
+    ],
+    "id": "form-2025.1",
+    "procedureID": "RKO0010",
+    "procedureVersion": "25.0.0",
+    "revision": "2025.1",
+    "sources": [
+      {
+        "checkedAt": "2026-07-21T05:00:00Z",
+        "title": "e-Tax仕様書一覧（所得税 XML・帳票フィールド）",
+        "url": "https://www.e-tax.nta.go.jp/shiyo/shiyo3.htm"
+      },
+      {
+        "checkedAt": "2026-07-21T05:00:00Z",
+        "title": "e-Tax WEB版 .xtx取込手順",
+        "url": "https://www.e-tax.nta.go.jp/toiawase/qa/e-taxweb/49.htm"
+      }
+    ]
+  },
+  "invoiceDeductionRules": [
+    {
+      "deductibleRateBasisPoints": 8000,
+      "firstTransactionDate": "2023-10-01",
+      "lastTransactionDate": "2026-09-30"
+    }
+  ],
+  "taxRuleSet": {
+    "blueReturnDeduction": {
+      "basicMaximum": {
+        "yen": 100000
+      },
+      "doubleEntryMaximum": {
+        "yen": 550000
+      },
+      "electronicMaximum": {
+        "yen": 650000
+      }
+    },
+    "effectivePeriod": {
+      "firstYear": 2025,
+      "lastYear": 2025
+    },
+    "id": "tax-2025.1",
+    "revision": "2025.1",
+    "sources": [
+      {
+        "checkedAt": "2026-07-21T05:00:00Z",
+        "title": "令和7年分 青色申告決算書・手引き",
+        "url": "https://www.nta.go.jp/taxes/shiraberu/shinkoku/syotoku/r07.htm"
+      }
+    ]
+  }
+}

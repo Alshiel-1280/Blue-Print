@@ -1,0 +1,16 @@
+{
+  "calendarYear": 2025,
+  "keyID": "bundled-v1.1",
+  "minimumAppVersion": "1.1.0",
+  "packageID": "blueprint-rules-2025.1",
+  "payloadSHA256": "b87673a91ff659eaa24675a0d38516d9a655f787bb12e95576cedfbda77535cd",
+  "revision": "2025.1",
+  "schemaVersion": 1,
+  "scopes": [
+    "bookkeeping",
+    "consumptionTax",
+    "closing",
+    "incomeTaxForm",
+    "xtx"
+  ]
+}

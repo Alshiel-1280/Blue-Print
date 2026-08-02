@@ -53,6 +53,7 @@ public final class SQLiteConnection: @unchecked Sendable {
 
   private let lock = NSRecursiveLock()
   private var handle: OpaquePointer?
+  private var transactionDepth = 0
 
   public init(databaseURL: URL) throws {
     self.databaseURL = databaseURL
@@ -133,13 +134,31 @@ public final class SQLiteConnection: @unchecked Sendable {
   public func transaction<T>(_ body: () throws -> T) throws -> T {
     lock.lock()
     defer { lock.unlock() }
-    try execute("BEGIN IMMEDIATE TRANSACTION")
+    let depth = transactionDepth
+    let savepoint = "blueprint_nested_\(depth)"
+    if depth == 0 {
+      try execute("BEGIN IMMEDIATE TRANSACTION")
+    } else {
+      try execute("SAVEPOINT \(savepoint)")
+    }
+    transactionDepth += 1
     do {
       let result = try body()
-      try execute("COMMIT")
+      transactionDepth = depth
+      if depth == 0 {
+        try execute("COMMIT")
+      } else {
+        try execute("RELEASE SAVEPOINT \(savepoint)")
+      }
       return result
     } catch {
-      try? execute("ROLLBACK")
+      transactionDepth = depth
+      if depth == 0 {
+        try? execute("ROLLBACK")
+      } else {
+        try? execute("ROLLBACK TO SAVEPOINT \(savepoint)")
+        try? execute("RELEASE SAVEPOINT \(savepoint)")
+      }
       throw error
     }
   }

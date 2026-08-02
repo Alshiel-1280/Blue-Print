@@ -7,7 +7,7 @@ struct InitialSetupView: View {
 
   @State private var ownerName = ""
   @State private var tradeName = ""
-  @State private var calendarYear = OfficialRules2025.latestSupportedYear
+  @State private var calendarYear = OfficialRulePackages.latestSupportedYear
   @State private var consumptionTaxStatus = ConsumptionTaxStatus.exempt
   @State private var invoiceStatus = InvoiceRegistrationStatus.unknown
   @State private var bookkeepingStyle = BookkeepingStyle.doubleEntry
@@ -20,7 +20,8 @@ struct InitialSetupView: View {
   }
 
   private var hasFilingRules: Bool {
-    (try? OfficialRules2025.catalog.rules(for: calendarYear)) != nil
+    guard let support = OfficialRulePackages.store.support(for: calendarYear) else { return false }
+    return support.supports(.incomeTaxForm) && support.supports(.xtx)
   }
 
   var body: some View {
@@ -72,7 +73,11 @@ struct InitialSetupView: View {
                 .accessibilityHint("申告する本人の氏名を入力します")
               TextField("屋号", text: $tradeName, prompt: Text("青空デザイン"))
                 .accessibilityHint("屋号がない場合は氏名を入力します")
-              Stepper("申告年度: \(calendarYear)年", value: $calendarYear, in: 2000...2100)
+              Picker("申告年度", selection: $calendarYear) {
+                ForEach(OfficialRulePackages.supportedYears, id: \.self) { year in
+                  Text("\(year)年").tag(year)
+                }
+              }
               if !hasFilingRules {
                 Label(
                   "この年度の申告・e-Taxルールは未登録です。帳簿は作成できますが、申告出力はルール追加後に利用できます。",
