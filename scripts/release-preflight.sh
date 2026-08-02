@@ -37,8 +37,16 @@ plist_version=$(
         Resources/Info.plist
 )
 source_version=$(
-    sed -n 's/.*public static let app = "\([^"]*\)".*/\1/p' \
-        Sources/BlueprintDomain/Versioning.swift
+    awk '
+        /public enum BlueprintVersions/ { in_current_versions = 1 }
+        in_current_versions && /public static let app =/ {
+            value = $0
+            sub(/^.*public static let app = "/, "", value)
+            sub(/".*$/, "", value)
+            print value
+            exit
+        }
+    ' Sources/BlueprintDomain/Versioning.swift
 )
 
 if [ -z "$source_version" ] || [ "$plist_version" != "$source_version" ]; then
